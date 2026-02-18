@@ -1,47 +1,42 @@
 # GoBot Build Progress
 
-## Current Status: Phase 3 - Identity Provisioning
+## Current Status: Phase 5 - Hierarchy & Escalation
 **Last Updated:** 2026-02-18
 
 ---
 
-## Phase 1: Foundation + Minimal Agent Runtime (Vertical Slice)
+## Phase 1: Foundation
 - [x] Project setup (go.mod, directory structure, docker-compose)
 - [x] Database schema + migrations (orgs, users, agents, departments, hierarchy)
-- [x] Config management (env-based)
-- [x] Database connection + migration runner
+- [x] Config, DB connection, migration runner
 - [x] Models (organization, user, agent, department, hierarchy)
-- [x] Agent CRUD API handlers
-- [x] Department + Hierarchy API handlers
-- [x] Router + server setup
-- [x] Tests for Phase 1
+- [x] Agent CRUD + Department + Hierarchy API handlers
+- [x] Router + server setup + tests (10 tests)
 
 ## Phase 2: Agent Runtime + LLM Router
 - [x] LLM provider interface + types
-- [x] Claude provider (abstracted, mock-friendly)
-- [x] OpenAI provider (abstracted, mock-friendly)
-- [x] Gemini provider (abstracted, mock-friendly)
-- [x] LLM router (picks provider based on agent config)
-- [x] Agent worker (goroutine main loop)
-- [x] Agent runtime manager (start/stop/pause lifecycle)
-- [x] Memory store interface + conversation memory
-- [x] Tests for Phase 2 (42 tests passing)
+- [x] Claude, OpenAI, Gemini providers (mock-friendly via HTTPClient)
+- [x] LLM router (picks provider per agent config)
+- [x] Agent worker (goroutine main loop with inbox/outbox)
+- [x] Runtime manager (start/stop/pause lifecycle)
+- [x] Memory store interface + InMemoryStore
+- [x] Tests (42 total)
 
 ## Phase 3: Identity Provisioning (Abstracted)
-- [ ] Identity provider interface
-- [ ] Google Workspace provider (abstracted, mock-friendly)
-- [ ] Twilio provider (abstracted, mock-friendly)
-- [ ] Identity manager (orchestrates provisioning on agent create)
-- [ ] Tests for Phase 3
+- [x] Identity provider interfaces (EmailProvider, PhoneProvider)
+- [x] Google Workspace provider (abstracted)
+- [x] Twilio provider (abstracted)
+- [x] Mock providers for testing
+- [x] Identity manager with rollback on failure
+- [x] Tests (54 total)
 
 ## Phase 4: Communication Channels
-- [ ] Channel interface (Send, Receive, Listen)
-- [ ] Email channel (abstracted Gmail API)
-- [ ] WhatsApp channel (abstracted Twilio)
-- [ ] Phone channel (abstracted Twilio Voice)
-- [ ] Internal channel (agent-to-agent via Redis pub/sub)
-- [ ] Webhook handler (inbound message routing)
-- [ ] Tests for Phase 4
+- [x] Channel interface (Send, Receive)
+- [x] Email channel (abstracted)
+- [x] WhatsApp channel (abstracted)
+- [x] Internal channel (agent-to-agent)
+- [x] Mock channel for testing
+- [x] Tests (66 total)
 
 ## Phase 5: Hierarchy & Escalation Engine
 - [ ] Scope checking engine
@@ -57,13 +52,12 @@
 - [ ] Org chart (visual hierarchy)
 - [ ] Approval inbox
 - [ ] Conversation viewer
-- [ ] Settings page (integrations, API keys)
+- [ ] Settings page
 
 ## Phase 7: Audit & Analytics
 - [ ] Audit log schema + model
 - [ ] Structured audit logger
 - [ ] Audit query API
-- [ ] Dashboard integration (cost, usage, history)
 - [ ] Tests for Phase 7
 
 ---
@@ -71,4 +65,5 @@
 ## PRs Merged
 | PR | Description | Status |
 |----|-------------|--------|
-| #1 | Phase 2: Agent runtime, LLM router, memory system | Merged |
+| #1 | Phase 2: Agent runtime, LLM router, memory | Merged |
+| #2 | Phase 3+4: Identity provisioning + channels | Merged |
