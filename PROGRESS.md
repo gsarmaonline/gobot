@@ -1,30 +1,31 @@
 # GoBot Build Progress
 
-## Current Status: Phase 1 - Foundation
+## Current Status: Phase 3 - Identity Provisioning
 **Last Updated:** 2026-02-18
 
 ---
 
 ## Phase 1: Foundation + Minimal Agent Runtime (Vertical Slice)
 - [x] Project setup (go.mod, directory structure, docker-compose)
-- [ ] Database schema + migrations (orgs, users, agents, departments, hierarchy)
-- [ ] Config management (env-based)
-- [ ] Database connection + migration runner
-- [ ] Models (organization, user, agent, department, hierarchy)
-- [ ] Agent CRUD API handlers
-- [ ] Department + Hierarchy API handlers
-- [ ] Router + server setup
-- [ ] Tests for Phase 1
+- [x] Database schema + migrations (orgs, users, agents, departments, hierarchy)
+- [x] Config management (env-based)
+- [x] Database connection + migration runner
+- [x] Models (organization, user, agent, department, hierarchy)
+- [x] Agent CRUD API handlers
+- [x] Department + Hierarchy API handlers
+- [x] Router + server setup
+- [x] Tests for Phase 1
 
 ## Phase 2: Agent Runtime + LLM Router
-- [ ] LLM provider interface + types
-- [ ] Claude provider (abstracted, mock-friendly)
-- [ ] OpenAI provider (abstracted, mock-friendly)
-- [ ] LLM router (picks provider based on agent config)
-- [ ] Agent worker (goroutine main loop)
-- [ ] Agent runtime manager (start/stop/pause lifecycle)
-- [ ] Memory store interface + conversation memory
-- [ ] Tests for Phase 2
+- [x] LLM provider interface + types
+- [x] Claude provider (abstracted, mock-friendly)
+- [x] OpenAI provider (abstracted, mock-friendly)
+- [x] Gemini provider (abstracted, mock-friendly)
+- [x] LLM router (picks provider based on agent config)
+- [x] Agent worker (goroutine main loop)
+- [x] Agent runtime manager (start/stop/pause lifecycle)
+- [x] Memory store interface + conversation memory
+- [x] Tests for Phase 2 (42 tests passing)
 
 ## Phase 3: Identity Provisioning (Abstracted)
 - [ ] Identity provider interface
@@ -70,4 +71,4 @@
 ## PRs Merged
 | PR | Description | Status |
 |----|-------------|--------|
-| - | - | - |
+| #1 | Phase 2: Agent runtime, LLM router, memory system | Merged |
