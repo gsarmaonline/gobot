@@ -237,6 +237,17 @@ func (t *Telegram) handleCommand(chatID int64, chatIDStr, text string) {
 	log.Printf("telegram: admin command %q from chat %s", cmd, chatIDStr)
 }
 
+// Broadcast sends text to all configured admin chat IDs.
+func (t *Telegram) Broadcast(text string) {
+	data := t.reg.Get()
+	if data.Telegram == nil {
+		return
+	}
+	for _, chatID := range data.Telegram.AdminChatIDs {
+		t.sendText(chatID, text)
+	}
+}
+
 func (t *Telegram) sendText(chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = tgbotapi.ModeMarkdown
