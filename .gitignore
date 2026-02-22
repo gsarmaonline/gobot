@@ -1,5 +1,6 @@
 # Binaries
 /gobot
+/tmp/
 /cmd/server/server
 *.exe
 *.dll
@@ -25,6 +26,11 @@
 .env
 .env.local
 .env.*.local
+
+# Gobot runtime config (contains secrets and session state)
+projects.json
+sessions.json
+sessions.json.tmp
 
 # OS
 .DS_Store

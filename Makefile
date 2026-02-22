@@ -1,13 +1,17 @@
 BINARY := gobot
 BUILD_FLAGS := -ldflags="-s -w"
 
-.PHONY: build run smoketest test init watch deploy deploy-config
+.PHONY: build run dev smoketest test init watch deploy deploy-config
 
 build:
 	go build $(BUILD_FLAGS) -o $(BINARY) ./cmd/gobot/
 
 run:
 	go run ./cmd/gobot/
+
+# Hot-reload with Air: rebuilds and restarts on any .go file change
+dev:
+	air
 
 smoketest:
 	go run ./cmd/smoketest/

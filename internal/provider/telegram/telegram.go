@@ -100,11 +100,14 @@ func (t *Telegram) handleUpdate(ctx context.Context, update tgbotapi.Update, out
 		return
 	}
 
-	// Look up the project bound to this chat.
+	// Look up the project bound to this chat, falling back to the default.
 	project, ok := t.reg.ProjectForChat(chatIDStr)
 	if !ok {
-		t.sendText(chatID, "No project bound. Use /setproject <name>.")
-		return
+		project = t.reg.DefaultProject()
+		if project == "" {
+			t.sendText(chatID, "No project bound. Use /setproject <name>.")
+			return
+		}
 	}
 
 	senderName := ""

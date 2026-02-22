@@ -34,9 +34,10 @@ type LinearConfig struct {
 
 // Data is the full contents of projects.json.
 type Data struct {
-	Projects map[string]Project `json:"projects"`
-	Telegram *TelegramConfig    `json:"telegram,omitempty"`
-	Linear   *LinearConfig      `json:"linear,omitempty"`
+	Projects       map[string]Project `json:"projects"`
+	DefaultProject string             `json:"defaultProject,omitempty"`
+	Telegram       *TelegramConfig    `json:"telegram,omitempty"`
+	Linear         *LinearConfig      `json:"linear,omitempty"`
 }
 
 // Registry holds the parsed projects.json and supports hot-reload.
@@ -75,6 +76,15 @@ func (r *Registry) reload() error {
 
 	if data.Projects == nil {
 		data.Projects = make(map[string]Project)
+	}
+
+	// Ensure workDirs exist for all projects.
+	for name, p := range data.Projects {
+		if p.WorkDir != "" {
+			if err := os.MkdirAll(p.WorkDir, 0755); err != nil {
+				log.Printf("registry: create workDir for %q (%s): %v", name, p.WorkDir, err)
+			}
+		}
 	}
 
 	r.mu.Lock()
@@ -126,6 +136,13 @@ func (r *Registry) WorkDir(project string) string {
 		return p.WorkDir
 	}
 	return ""
+}
+
+// DefaultProject returns the name of the default project, or "" if unset.
+func (r *Registry) DefaultProject() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.data.DefaultProject
 }
 
 // ProjectForChat returns the project name bound to chatID, if any.

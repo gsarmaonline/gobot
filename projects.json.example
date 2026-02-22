@@ -1,5 +1,8 @@
 {
   "projects": {
+    "default": {
+      "workDir": "/tmp/gobot-workspace"
+    },
     "backend": {
       "workDir": "/home/user/repos/backend"
     },
@@ -7,6 +10,7 @@
       "workDir": "/home/user/repos/frontend"
     }
   },
+  "defaultProject": "default",
   "telegram": {
     "token": "123456:ABCDEFG...",
     "adminChatIDs": [123456789],
