@@ -56,6 +56,21 @@ go run ./cmd/gobot/
 3. gobot shows a typing indicator, then streams the response back as Claude works
 4. Send a follow-up — the session is automatically resumed
 
+## Deployment (Ubuntu)
+
+```bash
+# First-time setup on the server
+sudo bash service/install.sh
+
+# Edit secrets
+sudo nano /etc/gobot/env
+
+# Deploy updates from your dev machine
+make deploy HOST=user@yourserver
+```
+
+See `service/` for the systemd unit file, env template, and install script.
+
 ## Testing
 
 Unit tests:

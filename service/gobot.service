@@ -1,0 +1,21 @@
+[Unit]
+Description=Gobot Telegram→Claude orchestrator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/gobot
+EnvironmentFile=/etc/gobot/env
+Restart=on-failure
+RestartSec=5s
+
+User=gobot
+Group=gobot
+WorkingDirectory=/var/lib/gobot/workspace
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gobot
+
+[Install]
+WantedBy=multi-user.target
