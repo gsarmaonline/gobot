@@ -118,6 +118,9 @@ func (t *Telegram) Send(ctx context.Context, out provider.OutboundMessage) error
 	return err
 }
 
+// Streaming returns true — Telegram supports incremental message delivery.
+func (t *Telegram) Streaming() bool { return true }
+
 // SendTyping sends a "typing" chat action.
 func (t *Telegram) SendTyping(ctx context.Context, chatID string) error {
 	id, err := strconv.ParseInt(chatID, 10, 64)

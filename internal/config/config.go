@@ -11,8 +11,23 @@ import (
 )
 
 type Config struct {
-	TelegramToken      string
-	AllowedChatIDs     []int64
+	// Provider selection: "telegram" (default) or "linear"
+	Provider string
+
+	// Telegram settings
+	TelegramToken  string
+	AllowedChatIDs []int64
+
+	// Linear settings
+	LinearAPIKey        string
+	LinearWebhookSecret string
+	LinearWebhookPort   int
+	LinearTriggerState  string
+	LinearDoneState     string
+	LinearTeamRepos     map[string]string // teamKey → absolute repo path
+	LinearDefaultRepo   string
+
+	// Claude executor settings
 	ClaudePath         string
 	ClaudeModel        string
 	ClaudeAllowedTools string
@@ -26,7 +41,14 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
+		Provider:           getEnvOrDefault("PROVIDER", "telegram"),
 		TelegramToken:      os.Getenv("TELEGRAM_TOKEN"),
+		LinearAPIKey:       os.Getenv("LINEAR_API_KEY"),
+		LinearWebhookSecret: os.Getenv("LINEAR_WEBHOOK_SECRET"),
+		LinearWebhookPort:  8080,
+		LinearTriggerState: getEnvOrDefault("LINEAR_TRIGGER_STATE", "In Progress"),
+		LinearDoneState:    getEnvOrDefault("LINEAR_DONE_STATE", "Done"),
+		LinearDefaultRepo:  os.Getenv("LINEAR_DEFAULT_REPO"),
 		ClaudePath:         getEnvOrDefault("CLAUDE_PATH", "claude"),
 		ClaudeModel:        getEnvOrDefault("CLAUDE_MODEL", "claude-opus-4-6"),
 		ClaudeAllowedTools: getEnvOrDefault("CLAUDE_ALLOWED_TOOLS", "Bash,Read,Edit,Write,Glob,Grep"),
@@ -34,8 +56,45 @@ func Load() (*Config, error) {
 		ExecTimeout:        5 * time.Minute,
 	}
 
-	if cfg.TelegramToken == "" {
-		return nil, fmt.Errorf("TELEGRAM_TOKEN is required")
+	switch cfg.Provider {
+	case "telegram":
+		if cfg.TelegramToken == "" {
+			return nil, fmt.Errorf("TELEGRAM_TOKEN is required when PROVIDER=telegram")
+		}
+	case "linear":
+		if cfg.LinearAPIKey == "" {
+			return nil, fmt.Errorf("LINEAR_API_KEY is required when PROVIDER=linear")
+		}
+		if cfg.LinearWebhookSecret == "" {
+			return nil, fmt.Errorf("LINEAR_WEBHOOK_SECRET is required when PROVIDER=linear")
+		}
+	default:
+		return nil, fmt.Errorf("unknown PROVIDER %q: must be telegram or linear", cfg.Provider)
+	}
+
+	if raw := os.Getenv("LINEAR_WEBHOOK_PORT"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid LINEAR_WEBHOOK_PORT: %w", err)
+		}
+		cfg.LinearWebhookPort = v
+	}
+
+	if raw := os.Getenv("LINEAR_TEAM_REPOS"); raw != "" {
+		cfg.LinearTeamRepos = make(map[string]string)
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			idx := strings.Index(part, ":")
+			if idx < 0 {
+				return nil, fmt.Errorf("invalid LINEAR_TEAM_REPOS entry %q: expected KEY:/path", part)
+			}
+			key := strings.TrimSpace(part[:idx])
+			path := strings.TrimSpace(part[idx+1:])
+			cfg.LinearTeamRepos[key] = path
+		}
 	}
 
 	if raw := os.Getenv("CLAUDE_MAX_BUDGET_USD"); raw != "" {
