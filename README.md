@@ -50,7 +50,7 @@ Linear "Done" webhook → emit "merge" action
 ### Prerequisites
 
 - Go 1.24+
-- [`claude` CLI](https://github.com/anthropics/claude-code) installed and authenticated (`ANTHROPIC_API_KEY` set)
+- [`claude` CLI](https://github.com/anthropics/claude-code) installed and logged in (`claude login`)
 - **Telegram:** A bot token (create via [@BotFather](https://t.me/BotFather))
 - **Linear:** A Linear API key, webhook signing secret, and `gh` CLI authenticated
 
@@ -111,6 +111,8 @@ All provider and project configuration lives here. Sections are optional — onl
 ### Environment variables
 
 Only Claude executor settings are configured via env:
+
+No env vars are required. Gobot shells out to `claude`, which uses credentials from `claude login`. Optional overrides:
 
 | Variable | Default | Description |
 |---|---|---|
