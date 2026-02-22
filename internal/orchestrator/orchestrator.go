@@ -27,9 +27,9 @@ type session struct {
 	PRUrl      string
 }
 
-// Orchestrator ties a Provider and an Executor together.
+// Orchestrator ties multiple Providers and an Executor together.
 type Orchestrator struct {
-	provider  provider.Provider
+	providers map[string]provider.Provider
 	executor  executor.Executor
 	workDirFn func(provider.InboundMessage) string
 
@@ -38,30 +38,60 @@ type Orchestrator struct {
 }
 
 // New creates a new Orchestrator.
+// providers is a slice of Provider instances; each must have a unique Name().
 // workDirFn returns the working directory to use for a given inbound message.
-func New(p provider.Provider, e executor.Executor, workDirFn func(provider.InboundMessage) string) *Orchestrator {
+func New(providers []provider.Provider, e executor.Executor, workDirFn func(provider.InboundMessage) string) *Orchestrator {
+	pm := make(map[string]provider.Provider, len(providers))
+	for _, p := range providers {
+		pm[p.Name()] = p
+	}
 	return &Orchestrator{
-		provider:  p,
+		providers: pm,
 		executor:  e,
 		workDirFn: workDirFn,
 		sessions:  make(map[string]*session),
 	}
 }
 
-// Run starts the orchestrator and blocks until ctx is cancelled.
+// Run starts all providers and fans their messages into a single stream,
+// blocking until ctx is cancelled.
 func (o *Orchestrator) Run(ctx context.Context) error {
-	msgs, err := o.provider.Messages(ctx)
-	if err != nil {
-		return fmt.Errorf("start messages: %w", err)
+	merged := make(chan provider.InboundMessage, 32)
+	var wg sync.WaitGroup
+
+	names := make([]string, 0, len(o.providers))
+	for name, p := range o.providers {
+		names = append(names, name)
+		ch, err := p.Messages(ctx)
+		if err != nil {
+			return fmt.Errorf("start messages for %s: %w", name, err)
+		}
+		wg.Add(1)
+		go func(name string, ch <-chan provider.InboundMessage) {
+			defer wg.Done()
+			for msg := range ch {
+				msg.ProviderName = name
+				select {
+				case merged <- msg:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(name, ch)
 	}
 
-	log.Printf("Orchestrator running (provider=%s executor=%s)", o.provider.Name(), o.executor.Name())
+	go func() {
+		wg.Wait()
+		close(merged)
+	}()
+
+	log.Printf("Orchestrator running (providers=%s executor=%s)", strings.Join(names, ","), o.executor.Name())
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case msg, ok := <-msgs:
+		case msg, ok := <-merged:
 			if !ok {
 				return nil
 			}
@@ -71,10 +101,11 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 }
 
 func sessionKey(msg provider.InboundMessage) string {
+	key := msg.ProviderName + ":" + msg.ChatID
 	if msg.ThreadID != "" {
-		return msg.ChatID + ":" + msg.ThreadID
+		key += ":" + msg.ThreadID
 	}
-	return msg.ChatID
+	return key
 }
 
 func (o *Orchestrator) getSession(key string) *session {
@@ -92,22 +123,27 @@ func (o *Orchestrator) setSession(key string, s *session) {
 func (o *Orchestrator) handle(ctx context.Context, msg provider.InboundMessage) {
 	key := sessionKey(msg)
 
+	p, ok := o.providers[msg.ProviderName]
+	if !ok {
+		log.Printf("[%s] unknown provider %q; dropping message", key, msg.ProviderName)
+		return
+	}
+
 	// Route merge actions to dedicated handler.
 	if msg.Meta != nil && msg.Meta["action"] == "merge" {
-		o.handleMerge(ctx, msg, key)
+		o.handleMerge(ctx, msg, key, p)
 		return
 	}
 
 	log.Printf("[%s] received from %s: %q", key, msg.SenderName, msg.Text)
 
 	// Show typing indicator.
-	if err := o.provider.SendTyping(ctx, msg.ChatID); err != nil {
+	if err := p.SendTyping(ctx, msg.ChatID); err != nil {
 		log.Printf("[%s] SendTyping error: %v", key, err)
 	}
 
 	workDir := o.workDirFn(msg)
 
-	// Determine whether to resume an existing session.
 	var chunks <-chan executor.StreamChunk
 	var result <-chan *executor.Result
 	var err error
@@ -121,21 +157,19 @@ func (o *Orchestrator) handle(ctx context.Context, msg provider.InboundMessage) 
 	}
 
 	if err != nil {
-		o.sendError(ctx, msg, err)
+		o.sendError(ctx, msg, p, err)
 		return
 	}
 
-	streaming := o.provider.Streaming()
-
-	if streaming {
-		o.handleStreaming(ctx, msg, key, chunks, result)
+	if p.Streaming() {
+		o.handleStreaming(ctx, msg, key, p, chunks, result)
 	} else {
-		o.handleBatch(ctx, msg, key, chunks, result, workDir)
+		o.handleBatch(ctx, msg, key, p, chunks, result)
 	}
 }
 
 // handleStreaming fans chunks out to the provider as they arrive (e.g. Telegram).
-func (o *Orchestrator) handleStreaming(ctx context.Context, msg provider.InboundMessage, key string, chunks <-chan executor.StreamChunk, result <-chan *executor.Result) {
+func (o *Orchestrator) handleStreaming(ctx context.Context, msg provider.InboundMessage, key string, p provider.Provider, chunks <-chan executor.StreamChunk, result <-chan *executor.Result) {
 	var textBuf strings.Builder
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
@@ -146,7 +180,7 @@ func (o *Orchestrator) handleStreaming(ctx context.Context, msg provider.Inbound
 			return
 		}
 		textBuf.Reset()
-		o.send(ctx, msg, text)
+		o.send(ctx, msg, p, text)
 	}
 
 	done := false
@@ -165,10 +199,10 @@ func (o *Orchestrator) handleStreaming(ctx context.Context, msg provider.Inbound
 				}
 			case "tool_use":
 				flush()
-				o.send(ctx, msg, fmt.Sprintf("_Using tool: %s…_", chunk.Content))
+				o.send(ctx, msg, p, fmt.Sprintf("_Using tool: %s…_", chunk.Content))
 			case "error":
 				flush()
-				o.send(ctx, msg, fmt.Sprintf("⚠️ Error: %s", chunk.Content))
+				o.send(ctx, msg, p, fmt.Sprintf("⚠️ Error: %s", chunk.Content))
 			}
 
 		case <-ticker.C:
@@ -187,8 +221,7 @@ func (o *Orchestrator) handleStreaming(ctx context.Context, msg provider.Inbound
 }
 
 // handleBatch drains all chunks silently, then sends a single final response.
-func (o *Orchestrator) handleBatch(ctx context.Context, msg provider.InboundMessage, key string, chunks <-chan executor.StreamChunk, result <-chan *executor.Result, workDir string) {
-	// Drain chunks — log tool_use events for observability.
+func (o *Orchestrator) handleBatch(ctx context.Context, msg provider.InboundMessage, key string, p provider.Provider, chunks <-chan executor.StreamChunk, result <-chan *executor.Result) {
 	for chunk := range chunks {
 		if chunk.Type == "tool_use" {
 			log.Printf("[%s] tool_use: %s", key, chunk.Content)
@@ -202,11 +235,10 @@ func (o *Orchestrator) handleBatch(ctx context.Context, msg provider.InboundMess
 
 	if res.Err != nil {
 		log.Printf("[%s] executor error: %v", key, res.Err)
-		o.sendError(ctx, msg, res.Err)
+		o.sendError(ctx, msg, p, res.Err)
 		return
 	}
 
-	// Extract PR URL from output.
 	prURL := ""
 	if match := prURLRegex.FindString(res.Output); match != "" {
 		prURL = match
@@ -216,18 +248,18 @@ func (o *Orchestrator) handleBatch(ctx context.Context, msg provider.InboundMess
 	o.storeSession(key, res, prURL)
 
 	if res.Output != "" {
-		o.send(ctx, msg, res.Output)
+		o.send(ctx, msg, p, res.Output)
 	}
 }
 
 // handleMerge squash-merges the PR associated with the session.
-func (o *Orchestrator) handleMerge(ctx context.Context, msg provider.InboundMessage, key string) {
+func (o *Orchestrator) handleMerge(ctx context.Context, msg provider.InboundMessage, key string, p provider.Provider) {
 	log.Printf("[%s] handling merge action", key)
 
 	s := o.getSession(key)
 	if s == nil || s.PRUrl == "" {
 		log.Printf("[%s] no PR URL found for merge", key)
-		o.send(ctx, msg, "⚠️ No PR found to merge. Was the issue implemented first?")
+		o.send(ctx, msg, p, "⚠️ No PR found to merge. Was the issue implemented first?")
 		return
 	}
 
@@ -237,12 +269,12 @@ func (o *Orchestrator) handleMerge(ctx context.Context, msg provider.InboundMess
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("[%s] gh pr merge error: %v\n%s", key, err, out)
-		o.send(ctx, msg, fmt.Sprintf("⚠️ PR merge failed: %s\n```\n%s\n```", err, strings.TrimSpace(string(out))))
+		o.send(ctx, msg, p, fmt.Sprintf("⚠️ PR merge failed: %s\n```\n%s\n```", err, strings.TrimSpace(string(out))))
 		return
 	}
 
 	log.Printf("[%s] merged PR %s", key, s.PRUrl)
-	o.send(ctx, msg, fmt.Sprintf("✅ PR merged: %s\n```\n%s\n```", s.PRUrl, strings.TrimSpace(string(out))))
+	o.send(ctx, msg, p, fmt.Sprintf("✅ PR merged: %s\n```\n%s\n```", s.PRUrl, strings.TrimSpace(string(out))))
 }
 
 func (o *Orchestrator) storeSession(key string, res *executor.Result, prURL string) {
@@ -261,12 +293,12 @@ func (o *Orchestrator) storeSession(key string, res *executor.Result, prURL stri
 		log.Printf("[%s] stored session %s prURL=%s", key, res.SessionID, s.PRUrl)
 	}
 	if res.Err != nil {
-		log.Printf("[%s] executor error: %v", key, res.Err)
+		log.Printf("executor error: %v", res.Err)
 	}
 }
 
-func (o *Orchestrator) send(ctx context.Context, inbound provider.InboundMessage, text string) {
-	if err := o.provider.Send(ctx, provider.OutboundMessage{
+func (o *Orchestrator) send(ctx context.Context, inbound provider.InboundMessage, p provider.Provider, text string) {
+	if err := p.Send(ctx, provider.OutboundMessage{
 		ChatID:   inbound.ChatID,
 		ThreadID: inbound.ThreadID,
 		Text:     text,
@@ -275,6 +307,6 @@ func (o *Orchestrator) send(ctx context.Context, inbound provider.InboundMessage
 	}
 }
 
-func (o *Orchestrator) sendError(ctx context.Context, inbound provider.InboundMessage, err error) {
-	o.send(ctx, inbound, fmt.Sprintf("⚠️ %s", err.Error()))
+func (o *Orchestrator) sendError(ctx context.Context, inbound provider.InboundMessage, p provider.Provider, err error) {
+	o.send(ctx, inbound, p, fmt.Sprintf("⚠️ %s", err.Error()))
 }

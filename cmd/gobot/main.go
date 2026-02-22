@@ -13,6 +13,7 @@ import (
 	"github.com/gsarma/gobot/internal/provider"
 	linearProvider "github.com/gsarma/gobot/internal/provider/linear"
 	telegramProvider "github.com/gsarma/gobot/internal/provider/telegram"
+	"github.com/gsarma/gobot/internal/registry"
 )
 
 func main() {
@@ -21,42 +22,51 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	var p provider.Provider
-	var workDirFn func(provider.InboundMessage) string
-
-	switch cfg.Provider {
-	case "telegram":
-		tg, err := telegramProvider.New(cfg.TelegramToken, cfg.AllowedChatIDs)
-		if err != nil {
-			log.Fatalf("telegram: %v", err)
-		}
-		p = tg
-		workDirFn = func(_ provider.InboundMessage) string { return cfg.WorkDir }
-
-	case "linear":
-		p = linearProvider.New(cfg)
-		workDirFn = func(msg provider.InboundMessage) string {
-			if msg.Meta != nil {
-				if teamKey := msg.Meta["teamKey"]; teamKey != "" {
-					if dir, ok := cfg.LinearTeamRepos[teamKey]; ok && dir != "" {
-						return dir
-					}
-				}
-			}
-			if cfg.LinearDefaultRepo != "" {
-				return cfg.LinearDefaultRepo
-			}
-			return cfg.WorkDir
-		}
+	reg, err := registry.Load(cfg.ProjectsFile)
+	if err != nil {
+		log.Fatalf("registry: %v", err)
 	}
-
-	exec := claudeexec.New(cfg)
-	orch := orchestrator.New(p, exec, workDirFn)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("gobot starting (provider=%s)...", cfg.Provider)
+	go reg.Watch(ctx)
+
+	// Build providers from registry data.
+	data := reg.Get()
+	var providers []provider.Provider
+
+	if data.Telegram != nil {
+		tg, err := telegramProvider.New(data.Telegram.Token, reg)
+		if err != nil {
+			log.Fatalf("telegram: %v", err)
+		}
+		providers = append(providers, tg)
+		log.Printf("Telegram provider enabled")
+	}
+
+	if data.Linear != nil {
+		providers = append(providers, linearProvider.New(reg))
+		log.Printf("Linear provider enabled")
+	}
+
+	if len(providers) == 0 {
+		log.Fatalf("no providers configured in %s: add a 'telegram' or 'linear' section", cfg.ProjectsFile)
+	}
+
+	workDirFn := func(msg provider.InboundMessage) string {
+		if project := msg.Meta["project"]; project != "" {
+			if dir := reg.WorkDir(project); dir != "" {
+				return dir
+			}
+		}
+		return ""
+	}
+
+	exec := claudeexec.New(cfg)
+	orch := orchestrator.New(providers, exec, workDirFn)
+
+	log.Printf("gobot starting...")
 	if err := orch.Run(ctx); err != nil && err != context.Canceled {
 		log.Fatalf("orchestrator: %v", err)
 	}

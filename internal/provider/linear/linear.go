@@ -12,24 +12,22 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gsarma/gobot/internal/config"
 	"github.com/gsarma/gobot/internal/provider"
+	"github.com/gsarma/gobot/internal/registry"
 )
 
 // Linear implements provider.Provider via an HTTP webhook server.
 type Linear struct {
-	cfg    *config.Config
-	client *Client
+	reg    *registry.Registry
 	msgs   chan provider.InboundMessage
 	server *http.Server
 }
 
 // New creates a new Linear webhook provider.
-func New(cfg *config.Config) *Linear {
+func New(reg *registry.Registry) *Linear {
 	return &Linear{
-		cfg:    cfg,
-		client: NewClient(cfg.LinearAPIKey),
-		msgs:   make(chan provider.InboundMessage, 16),
+		reg:  reg,
+		msgs: make(chan provider.InboundMessage, 16),
 	}
 }
 
@@ -44,15 +42,29 @@ func (l *Linear) SendTyping(ctx context.Context, chatID string) error { return n
 
 // Send posts a comment on the Linear issue identified by out.ChatID.
 func (l *Linear) Send(ctx context.Context, out provider.OutboundMessage) error {
-	return l.client.PostComment(out.ChatID, out.Text)
+	data := l.reg.Get().Linear
+	if data == nil {
+		return fmt.Errorf("linear: no config in registry")
+	}
+	return NewClient(data.APIKey).PostComment(out.ChatID, out.Text)
 }
 
 // Messages starts the HTTP webhook server and returns a channel of inbound events.
 func (l *Linear) Messages(ctx context.Context) (<-chan provider.InboundMessage, error) {
+	data := l.reg.Get().Linear
+	if data == nil {
+		return nil, fmt.Errorf("linear: no config in registry")
+	}
+
+	port := data.WebhookPort
+	if port == 0 {
+		port = 8080
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/webhook", l.handleWebhook)
 
-	addr := fmt.Sprintf(":%d", l.cfg.LinearWebhookPort)
+	addr := fmt.Sprintf(":%d", port)
 	l.server = &http.Server{Addr: addr, Handler: mux}
 
 	go func() {
@@ -104,8 +116,15 @@ func (l *Linear) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read current config snapshot.
+	cfg := l.reg.Get().Linear
+	if cfg == nil {
+		http.Error(w, "linear not configured", http.StatusInternalServerError)
+		return
+	}
+
 	// Verify HMAC-SHA256 signature.
-	if !l.verifySignature(rawBody, r.Header.Get("Linear-Signature")) {
+	if !verifySignature(rawBody, r.Header.Get("Linear-Signature"), cfg.WebhookSecret) {
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -137,11 +156,20 @@ func (l *Linear) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	triggerState := cfg.TriggerState
+	if triggerState == "" {
+		triggerState = "In Progress"
+	}
+	doneState := cfg.DoneState
+	if doneState == "" {
+		doneState = "Done"
+	}
+
 	var action string
 	switch stateName {
-	case l.cfg.LinearTriggerState:
+	case triggerState:
 		action = "execute"
-	case l.cfg.LinearDoneState:
+	case doneState:
 		action = "merge"
 	default:
 		w.WriteHeader(http.StatusOK)
@@ -149,10 +177,18 @@ func (l *Linear) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch full issue details from Linear API.
-	issue, err := l.client.FetchIssue(data.ID)
+	issue, err := NewClient(cfg.APIKey).FetchIssue(data.ID)
 	if err != nil {
 		log.Printf("linear: fetch issue %s: %v", data.ID, err)
 		http.Error(w, "fetch issue failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Resolve project via team binding.
+	project, ok := l.reg.ProjectForTeam(issue.TeamKey)
+	if !ok {
+		log.Printf("linear: no project binding for team %q; dropping event for %s", issue.TeamKey, issue.ID)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -162,7 +198,7 @@ func (l *Linear) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		Text:   "",
 		Meta: map[string]string{
 			"action":  action,
-			"teamKey": issue.TeamKey,
+			"project": project,
 		},
 	}
 
@@ -170,7 +206,7 @@ func (l *Linear) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		msg.Text = buildPrompt(issue)
 	}
 
-	log.Printf("linear: issue %s action=%s team=%s", issue.Identifier, action, issue.TeamKey)
+	log.Printf("linear: issue %s action=%s team=%s project=%s", issue.Identifier, action, issue.TeamKey, project)
 
 	select {
 	case l.msgs <- msg:
@@ -181,8 +217,8 @@ func (l *Linear) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (l *Linear) verifySignature(body []byte, sig string) bool {
-	mac := hmac.New(sha256.New, []byte(l.cfg.LinearWebhookSecret))
+func verifySignature(body []byte, sig, secret string) bool {
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	expected := hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(expected), []byte(sig))

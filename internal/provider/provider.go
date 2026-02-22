@@ -4,13 +4,14 @@ import "context"
 
 // InboundMessage is a message received from a provider.
 type InboundMessage struct {
-	ID         string
-	ChatID     string
-	ThreadID   string // non-empty for Telegram Forum topic messages
-	SenderName string
-	Text       string
-	Timestamp  int64
-	Meta       map[string]string // provider-specific metadata (e.g. "action", "teamKey")
+	ID           string
+	ChatID       string
+	ThreadID     string // non-empty for Telegram Forum topic messages
+	SenderName   string
+	Text         string
+	Timestamp    int64
+	Meta         map[string]string // provider-specific metadata (e.g. "action", "project")
+	ProviderName string            // set by orchestrator fan-in; identifies the source provider
 }
 
 // OutboundMessage is a message to be sent via a provider.

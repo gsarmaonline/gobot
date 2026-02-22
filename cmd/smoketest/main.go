@@ -1,4 +1,4 @@
-// smoketest exercises the Claude executor directly — no Telegram needed.
+// smoketest exercises the Claude executor directly — no providers needed.
 // Usage:
 //
 //	go run ./cmd/smoketest/
@@ -20,11 +20,6 @@ import (
 func main() {
 	_ = godotenv.Load()
 
-	// Allow running without TELEGRAM_TOKEN for this smoke test.
-	if os.Getenv("TELEGRAM_TOKEN") == "" {
-		os.Setenv("TELEGRAM_TOKEN", "smoketest")
-	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
@@ -36,15 +31,18 @@ func main() {
 		prompt = os.Args[1]
 	}
 
+	workDir, _ := os.Getwd()
+
 	fmt.Printf("Claude path : %s\n", cfg.ClaudePath)
 	fmt.Printf("Model       : %s\n", cfg.ClaudeModel)
+	fmt.Printf("Work dir    : %s\n", workDir)
 	fmt.Printf("Prompt      : %s\n\n", prompt)
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.ExecTimeout)
 	defer cancel()
 
 	exec := claudeexec.New(cfg)
-	chunks, result, err := exec.Stream(ctx, prompt, cfg.WorkDir)
+	chunks, result, err := exec.Stream(ctx, prompt, workDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "stream error: %v\n", err)
 		os.Exit(1)

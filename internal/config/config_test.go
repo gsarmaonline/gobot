@@ -6,17 +6,8 @@ import (
 	"time"
 )
 
-func TestLoad_RequiresTelegramToken(t *testing.T) {
-	os.Clearenv()
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error when TELEGRAM_TOKEN is missing")
-	}
-}
-
 func TestLoad_Defaults(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("TELEGRAM_TOKEN", "test-token")
 	defer os.Clearenv()
 
 	cfg, err := Load()
@@ -24,6 +15,9 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	if cfg.ProjectsFile != "projects.json" {
+		t.Errorf("ProjectsFile = %q, want %q", cfg.ProjectsFile, "projects.json")
+	}
 	if cfg.ClaudePath != "claude" {
 		t.Errorf("ClaudePath = %q, want %q", cfg.ClaudePath, "claude")
 	}
@@ -36,36 +30,24 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.ExecTimeout != 5*time.Minute {
 		t.Errorf("ExecTimeout = %v, want 5m", cfg.ExecTimeout)
 	}
-	if len(cfg.AllowedChatIDs) != 0 {
-		t.Errorf("AllowedChatIDs = %v, want empty", cfg.AllowedChatIDs)
-	}
 }
 
-func TestLoad_AllowedChatIDs(t *testing.T) {
+func TestLoad_CustomProjectsFile(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("TELEGRAM_TOKEN", "test-token")
-	os.Setenv("ALLOWED_CHAT_IDS", "123, 456, 789")
+	os.Setenv("PROJECTS_FILE", "/etc/gobot/projects.json")
 	defer os.Clearenv()
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	want := []int64{123, 456, 789}
-	if len(cfg.AllowedChatIDs) != len(want) {
-		t.Fatalf("AllowedChatIDs length = %d, want %d", len(cfg.AllowedChatIDs), len(want))
-	}
-	for i, id := range want {
-		if cfg.AllowedChatIDs[i] != id {
-			t.Errorf("AllowedChatIDs[%d] = %d, want %d", i, cfg.AllowedChatIDs[i], id)
-		}
+	if cfg.ProjectsFile != "/etc/gobot/projects.json" {
+		t.Errorf("ProjectsFile = %q, want %q", cfg.ProjectsFile, "/etc/gobot/projects.json")
 	}
 }
 
 func TestLoad_CustomExecTimeout(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("TELEGRAM_TOKEN", "test-token")
 	os.Setenv("EXEC_TIMEOUT", "10m")
 	defer os.Clearenv()
 
@@ -80,7 +62,6 @@ func TestLoad_CustomExecTimeout(t *testing.T) {
 
 func TestLoad_InvalidBudget(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("TELEGRAM_TOKEN", "test-token")
 	os.Setenv("CLAUDE_MAX_BUDGET_USD", "not-a-number")
 	defer os.Clearenv()
 

@@ -1,0 +1,28 @@
+{
+  "projects": {
+    "backend": {
+      "workDir": "/home/user/repos/backend"
+    },
+    "frontend": {
+      "workDir": "/home/user/repos/frontend"
+    }
+  },
+  "telegram": {
+    "token": "123456:ABCDEFG...",
+    "adminChatIDs": [123456789],
+    "chatBindings": {
+      "-1001234567890": "backend"
+    }
+  },
+  "linear": {
+    "apiKey": "lin_api_...",
+    "webhookSecret": "your_webhook_signing_secret",
+    "webhookPort": 8080,
+    "triggerState": "In Progress",
+    "doneState": "Done",
+    "teamBindings": {
+      "ENG": "backend",
+      "PLAT": "frontend"
+    }
+  }
+}
