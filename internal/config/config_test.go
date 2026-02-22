@@ -3,76 +3,89 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 )
 
-func TestLoadDefaults(t *testing.T) {
-	cfg := Load()
-
-	if cfg.Port != "8080" {
-		t.Errorf("expected default port '8080', got '%s'", cfg.Port)
-	}
-
-	if cfg.Env != "development" {
-		t.Errorf("expected default env 'development', got '%s'", cfg.Env)
-	}
-
-	if cfg.DefaultLLMProvider != "claude" {
-		t.Errorf("expected default LLM provider 'claude', got '%s'", cfg.DefaultLLMProvider)
-	}
-
-	if cfg.DefaultTemperature != 0.7 {
-		t.Errorf("expected default temperature 0.7, got %f", cfg.DefaultTemperature)
-	}
-
-	if cfg.DatabaseURL == "" {
-		t.Error("expected non-empty default database URL")
+func TestLoad_RequiresTelegramToken(t *testing.T) {
+	os.Clearenv()
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when TELEGRAM_TOKEN is missing")
 	}
 }
 
-func TestLoadFromEnv(t *testing.T) {
-	os.Setenv("PORT", "9090")
-	os.Setenv("ENV", "production")
-	os.Setenv("DEFAULT_TEMPERATURE", "0.5")
-	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("ENV")
-		os.Unsetenv("DEFAULT_TEMPERATURE")
-	}()
+func TestLoad_Defaults(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("TELEGRAM_TOKEN", "test-token")
+	defer os.Clearenv()
 
-	cfg := Load()
-
-	if cfg.Port != "9090" {
-		t.Errorf("expected port '9090', got '%s'", cfg.Port)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.Env != "production" {
-		t.Errorf("expected env 'production', got '%s'", cfg.Env)
+	if cfg.ClaudePath != "claude" {
+		t.Errorf("ClaudePath = %q, want %q", cfg.ClaudePath, "claude")
 	}
-
-	if cfg.DefaultTemperature != 0.5 {
-		t.Errorf("expected temperature 0.5, got %f", cfg.DefaultTemperature)
+	if cfg.ClaudeModel != "claude-opus-4-6" {
+		t.Errorf("ClaudeModel = %q, want %q", cfg.ClaudeModel, "claude-opus-4-6")
 	}
-}
-
-func TestValidate(t *testing.T) {
-	cfg := Load()
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("expected no error with default config, got: %v", err)
+	if cfg.ClaudeMaxBudgetUSD != 2.00 {
+		t.Errorf("ClaudeMaxBudgetUSD = %v, want 2.00", cfg.ClaudeMaxBudgetUSD)
 	}
-
-	cfg.DatabaseURL = ""
-	if err := cfg.Validate(); err == nil {
-		t.Error("expected error when DatabaseURL is empty")
+	if cfg.ExecTimeout != 5*time.Minute {
+		t.Errorf("ExecTimeout = %v, want 5m", cfg.ExecTimeout)
+	}
+	if len(cfg.AllowedChatIDs) != 0 {
+		t.Errorf("AllowedChatIDs = %v, want empty", cfg.AllowedChatIDs)
 	}
 }
 
-func TestGetEnvFloat(t *testing.T) {
-	// Invalid float should return fallback
-	os.Setenv("TEST_FLOAT", "not-a-number")
-	defer os.Unsetenv("TEST_FLOAT")
+func TestLoad_AllowedChatIDs(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("TELEGRAM_TOKEN", "test-token")
+	os.Setenv("ALLOWED_CHAT_IDS", "123, 456, 789")
+	defer os.Clearenv()
 
-	val := getEnvFloat("TEST_FLOAT", 1.5)
-	if val != 1.5 {
-		t.Errorf("expected fallback 1.5, got %f", val)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []int64{123, 456, 789}
+	if len(cfg.AllowedChatIDs) != len(want) {
+		t.Fatalf("AllowedChatIDs length = %d, want %d", len(cfg.AllowedChatIDs), len(want))
+	}
+	for i, id := range want {
+		if cfg.AllowedChatIDs[i] != id {
+			t.Errorf("AllowedChatIDs[%d] = %d, want %d", i, cfg.AllowedChatIDs[i], id)
+		}
+	}
+}
+
+func TestLoad_CustomExecTimeout(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("TELEGRAM_TOKEN", "test-token")
+	os.Setenv("EXEC_TIMEOUT", "10m")
+	defer os.Clearenv()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ExecTimeout != 10*time.Minute {
+		t.Errorf("ExecTimeout = %v, want 10m", cfg.ExecTimeout)
+	}
+}
+
+func TestLoad_InvalidBudget(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("TELEGRAM_TOKEN", "test-token")
+	os.Setenv("CLAUDE_MAX_BUDGET_USD", "not-a-number")
+	defer os.Clearenv()
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid CLAUDE_MAX_BUDGET_USD")
 	}
 }

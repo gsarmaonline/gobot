@@ -4,77 +4,86 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
+	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	// Server
-	Port string
-	Env  string // "development" | "production"
-
-	// Database
-	DatabaseURL string
-
-	// Redis
-	RedisURL string
-
-	// LLM Providers (API keys)
-	ClaudeAPIKey string
-	OpenAIAPIKey string
-	GeminiAPIKey string
-
-	// Identity Providers
-	GoogleWorkspaceCredentials string
-	TwilioAccountSID           string
-	TwilioAuthToken            string
-
-	// Agent defaults
-	DefaultLLMProvider string
-	DefaultLLMModel    string
-	DefaultTemperature float64
+	TelegramToken      string
+	AllowedChatIDs     []int64
+	ClaudePath         string
+	ClaudeModel        string
+	ClaudeAllowedTools string
+	ClaudeMaxBudgetUSD float64
+	ExecTimeout        time.Duration
+	WorkDir            string
 }
 
-func Load() *Config {
-	return &Config{
-		Port: getEnv("PORT", "8080"),
-		Env:  getEnv("ENV", "development"),
+func Load() (*Config, error) {
+	// Load .env if present; ignore error if file doesn't exist
+	_ = godotenv.Load()
 
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://gobot:gobot_dev@localhost:5432/gobot?sslmode=disable"),
-		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
-
-		ClaudeAPIKey: getEnv("CLAUDE_API_KEY", ""),
-		OpenAIAPIKey: getEnv("OPENAI_API_KEY", ""),
-		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
-
-		GoogleWorkspaceCredentials: getEnv("GOOGLE_WORKSPACE_CREDENTIALS", ""),
-		TwilioAccountSID:           getEnv("TWILIO_ACCOUNT_SID", ""),
-		TwilioAuthToken:            getEnv("TWILIO_AUTH_TOKEN", ""),
-
-		DefaultLLMProvider: getEnv("DEFAULT_LLM_PROVIDER", "claude"),
-		DefaultLLMModel:    getEnv("DEFAULT_LLM_MODEL", "claude-sonnet-4-5-20250929"),
-		DefaultTemperature: getEnvFloat("DEFAULT_TEMPERATURE", 0.7),
+	cfg := &Config{
+		TelegramToken:      os.Getenv("TELEGRAM_TOKEN"),
+		ClaudePath:         getEnvOrDefault("CLAUDE_PATH", "claude"),
+		ClaudeModel:        getEnvOrDefault("CLAUDE_MODEL", "claude-opus-4-6"),
+		ClaudeAllowedTools: getEnvOrDefault("CLAUDE_ALLOWED_TOOLS", "Bash,Read,Edit,Write,Glob,Grep"),
+		ClaudeMaxBudgetUSD: 2.00,
+		ExecTimeout:        5 * time.Minute,
 	}
-}
 
-func (c *Config) Validate() error {
-	if c.DatabaseURL == "" {
-		return fmt.Errorf("DATABASE_URL is required")
+	if cfg.TelegramToken == "" {
+		return nil, fmt.Errorf("TELEGRAM_TOKEN is required")
 	}
-	return nil
-}
 
-func getEnv(key, fallback string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
+	if raw := os.Getenv("CLAUDE_MAX_BUDGET_USD"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLAUDE_MAX_BUDGET_USD: %w", err)
+		}
+		cfg.ClaudeMaxBudgetUSD = v
 	}
-	return fallback
-}
 
-func getEnvFloat(key string, fallback float64) float64 {
-	if val := os.Getenv(key); val != "" {
-		f, err := strconv.ParseFloat(val, 64)
-		if err == nil {
-			return f
+	if raw := os.Getenv("EXEC_TIMEOUT"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid EXEC_TIMEOUT: %w", err)
+		}
+		cfg.ExecTimeout = d
+	}
+
+	if raw := os.Getenv("ALLOWED_CHAT_IDS"); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			id, err := strconv.ParseInt(part, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid chat ID %q: %w", part, err)
+			}
+			cfg.AllowedChatIDs = append(cfg.AllowedChatIDs, id)
 		}
 	}
-	return fallback
+
+	workDir := os.Getenv("WORK_DIR")
+	if workDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("could not determine working directory: %w", err)
+		}
+		workDir = wd
+	}
+	cfg.WorkDir = workDir
+
+	return cfg, nil
+}
+
+func getEnvOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
