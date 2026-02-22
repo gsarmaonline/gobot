@@ -58,14 +58,29 @@ go run ./cmd/gobot/
 
 ## Testing
 
+Unit tests:
+
 ```bash
 go test ./...
 ```
+
+Smoke test the Claude executor directly (no Telegram needed):
+
+```bash
+# default prompt
+go run ./cmd/smoketest/
+
+# custom prompt
+go run ./cmd/smoketest/ "list files in /tmp and summarise"
+```
+
+Prints each streamed chunk as it arrives, shows tool invocations, and reports elapsed time and session ID on completion.
 
 ## Project layout
 
 ```
 cmd/gobot/main.go                      # entry point
+cmd/smoketest/main.go                  # CLI smoke test for the Claude executor
 internal/
   config/config.go                     # env-var config
   provider/
