@@ -12,6 +12,7 @@ import (
 // Config holds Claude executor settings and the path to projects.json.
 type Config struct {
 	ProjectsFile       string
+	SessionsFile       string
 	ClaudePath         string
 	ClaudeModel        string
 	ClaudeAllowedTools string
@@ -25,6 +26,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		ProjectsFile:       getEnvOrDefault("PROJECTS_FILE", "projects.json"),
+		SessionsFile:       getEnvOrDefault("SESSIONS_FILE", "sessions.json"),
 		ClaudePath:         getEnvOrDefault("CLAUDE_PATH", "claude"),
 		ClaudeModel:        getEnvOrDefault("CLAUDE_MODEL", "claude-opus-4-6"),
 		ClaudeAllowedTools: getEnvOrDefault("CLAUDE_ALLOWED_TOOLS", "Bash,Read,Edit,Write,Glob,Grep"),

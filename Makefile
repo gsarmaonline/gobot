@@ -1,7 +1,7 @@
 BINARY := gobot
 BUILD_FLAGS := -ldflags="-s -w"
 
-.PHONY: build run smoketest test init deploy deploy-config
+.PHONY: build run smoketest test init watch deploy deploy-config
 
 build:
 	go build $(BUILD_FLAGS) -o $(BINARY) ./cmd/gobot/
@@ -14,6 +14,10 @@ smoketest:
 
 test:
 	go test ./...
+
+# Self-healing local dev loop: git pull every 30s, restart on exit or new commits
+watch:
+	@bash service/watch.sh
 
 # First-time setup: copy example files (skips if already present)
 init:

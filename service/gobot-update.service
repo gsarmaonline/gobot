@@ -1,0 +1,11 @@
+[Unit]
+Description=Gobot auto-update (pull + rebuild)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gobot-update
+EnvironmentFile=/etc/gobot/env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gobot-update

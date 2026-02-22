@@ -2,8 +2,10 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -29,9 +31,10 @@ type session struct {
 
 // Orchestrator ties multiple Providers and an Executor together.
 type Orchestrator struct {
-	providers map[string]provider.Provider
-	executor  executor.Executor
-	workDirFn func(provider.InboundMessage) string
+	providers    map[string]provider.Provider
+	executor     executor.Executor
+	workDirFn    func(provider.InboundMessage) string
+	sessionsFile string
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -40,16 +43,68 @@ type Orchestrator struct {
 // New creates a new Orchestrator.
 // providers is a slice of Provider instances; each must have a unique Name().
 // workDirFn returns the working directory to use for a given inbound message.
-func New(providers []provider.Provider, e executor.Executor, workDirFn func(provider.InboundMessage) string) *Orchestrator {
+// sessionsFile is the path to persist session state across restarts (empty = disabled).
+func New(providers []provider.Provider, e executor.Executor, workDirFn func(provider.InboundMessage) string, sessionsFile string) *Orchestrator {
 	pm := make(map[string]provider.Provider, len(providers))
 	for _, p := range providers {
 		pm[p.Name()] = p
 	}
-	return &Orchestrator{
-		providers: pm,
-		executor:  e,
-		workDirFn: workDirFn,
-		sessions:  make(map[string]*session),
+	o := &Orchestrator{
+		providers:    pm,
+		executor:     e,
+		workDirFn:    workDirFn,
+		sessionsFile: sessionsFile,
+		sessions:     make(map[string]*session),
+	}
+	o.loadSessions()
+	return o
+}
+
+// loadSessions restores persisted sessions from disk, dropping any older than 24h.
+func (o *Orchestrator) loadSessions() {
+	if o.sessionsFile == "" {
+		return
+	}
+	data, err := os.ReadFile(o.sessionsFile)
+	if err != nil {
+		return // file doesn't exist yet — normal on first run
+	}
+	var sessions map[string]*session
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		log.Printf("sessions: failed to parse %s: %v", o.sessionsFile, err)
+		return
+	}
+	cutoff := time.Now().Add(-24 * time.Hour)
+	for key, s := range sessions {
+		if s.LastActive.Before(cutoff) {
+			delete(sessions, key)
+		}
+	}
+	o.mu.Lock()
+	o.sessions = sessions
+	o.mu.Unlock()
+	log.Printf("sessions: restored %d session(s) from %s", len(sessions), o.sessionsFile)
+}
+
+// saveSessions atomically writes the current session map to disk.
+func (o *Orchestrator) saveSessions() {
+	if o.sessionsFile == "" {
+		return
+	}
+	o.mu.Lock()
+	data, err := json.Marshal(o.sessions)
+	o.mu.Unlock()
+	if err != nil {
+		log.Printf("sessions: marshal error: %v", err)
+		return
+	}
+	tmp := o.sessionsFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		log.Printf("sessions: write error: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, o.sessionsFile); err != nil {
+		log.Printf("sessions: rename error: %v", err)
 	}
 }
 
@@ -291,6 +346,7 @@ func (o *Orchestrator) storeSession(key string, res *executor.Result, prURL stri
 		}
 		o.setSession(key, s)
 		log.Printf("[%s] stored session %s prURL=%s", key, res.SessionID, s.PRUrl)
+		o.saveSessions()
 	}
 	if res.Err != nil {
 		log.Printf("executor error: %v", res.Err)

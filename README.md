@@ -117,6 +117,8 @@ No env vars are required. Gobot shells out to `claude`, which uses credentials f
 | Variable | Default | Description |
 |---|---|---|
 | `PROJECTS_FILE` | `projects.json` | Path to projects.json |
+| `SESSIONS_FILE` | `sessions.json` | Path to persist Claude session IDs across restarts |
+| `GOBOT_REPO_DIR` | `/var/lib/gobot/src` | Source repo path used by auto-update timer |
 | `CLAUDE_PATH` | `claude` | Path to the `claude` binary |
 | `CLAUDE_MODEL` | `claude-opus-4-6` | Model to use |
 | `CLAUDE_ALLOWED_TOOLS` | `Bash,Read,Edit,Write,Glob,Grep` | Tools Claude may use |
@@ -160,9 +162,14 @@ sudo nano /etc/gobot/projects.json # Provider config
 
 # Deploy updates from your dev machine
 make deploy HOST=user@yourserver
+
+# Push an updated projects.json without restarting (hot-reloaded within 5s)
+make deploy-config HOST=user@yourserver
 ```
 
-See `service/` for the systemd unit file, env template, and install script.
+`install.sh` also installs a `gobot-update.timer` that runs every 5 minutes: it pulls from `origin/main`, rebuilds if there are new commits, and restarts the service. If a `claude` session is actively running, the restart is deferred until it finishes.
+
+See `service/` for all systemd unit files, scripts, and templates.
 
 ## Testing
 

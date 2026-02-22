@@ -64,7 +64,7 @@ func main() {
 	}
 
 	exec := claudeexec.New(cfg)
-	orch := orchestrator.New(providers, exec, workDirFn)
+	orch := orchestrator.New(providers, exec, workDirFn, cfg.SessionsFile)
 
 	log.Printf("gobot starting...")
 	if err := orch.Run(ctx); err != nil && err != context.Canceled {
