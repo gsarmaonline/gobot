@@ -137,9 +137,7 @@ Add these sections to enable Claude to use browser automation, read email, and s
 {
   "google": {
     "email": "your-bot@gmail.com",
-    "clientID": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
-    "clientSecret": "YOUR_GOOGLE_CLIENT_SECRET",
-    "refreshToken": ""
+    "password": "your_gmail_app_password"
   },
   "twilio": {
     "accountSID": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
@@ -147,16 +145,19 @@ Add these sections to enable Claude to use browser automation, read email, and s
     "phoneNumber": "+15555550000"
   },
   "browser": {
-    "headless": true
+    "headless": true,
+    "userDataDir": "/var/lib/gobot/browser-profile"
   }
 }
 ```
 
-- **`google`** — Gmail credentials. Run `make setup-google` once to complete the OAuth2 device flow and store tokens automatically.
-- **`twilio`** — Twilio REST API credentials. No additional setup needed.
-- **`browser`** — enables Playwright browser automation (requires `npx` / Node.js). Set `headless: false` for headed mode.
+- **`google`** — Gmail email + password (or [App Password](https://myaccount.google.com/apppasswords)). Claude uses these credentials to log into Gmail via the browser — no API keys or OAuth2 setup required.
+- **`twilio`** — Twilio REST API credentials for sending/receiving SMS. No additional setup needed.
+- **`browser`** — enables Playwright browser automation via `npx @playwright/mcp@latest` (requires Node.js). Set `headless: false` for the first run to complete any interactive login steps. `userDataDir` persists the browser session (cookies, login state) across gobot restarts — set it once and Claude stays logged in.
 
 When any of these sections are present, gobot generates a temporary MCP config and passes `--mcp-config` to Claude, making the tools available without any changes to `CLAUDE_ALLOWED_TOOLS`.
+
+**First-time browser login:** set `headless: false`, start gobot, send a task that visits Gmail. Claude will open a visible browser, log in with the configured credentials, and save the session to `userDataDir`. Switch back to `headless: true` for subsequent runs.
 
 ### Environment variables
 
@@ -250,15 +251,13 @@ go run ./cmd/smoketest/ "list files in /tmp and summarise"
 
 ```
 cmd/gobot/main.go                      # entry point — loads registry, starts all providers
-cmd/gobot-mcp/main.go                  # MCP stdio server: Gmail + Twilio tools for Claude
-cmd/gobot-setup/main.go                # one-time Gmail OAuth2 device-flow setup
+cmd/gobot-mcp/main.go                  # MCP stdio server: Twilio SMS tools for Claude
 cmd/smoketest/main.go                  # CLI smoke test for the Claude executor
 projects.json.example                  # annotated example projects.json
 internal/
   config/config.go                     # Claude executor env-var config only
   registry/registry.go                 # projects.json loader, watcher, atomic Save
   identity/
-    gmail/gmail.go                     # Gmail v1 API client (list, get, send, FindOTP)
     twilio/twilio.go                   # Twilio REST client (list SMS, send SMS)
   provider/
     provider.go                        # Provider interface + message types

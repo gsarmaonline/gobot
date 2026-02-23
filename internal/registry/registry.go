@@ -32,14 +32,10 @@ type LinearConfig struct {
 	TeamBindings  map[string]string `json:"teamBindings"` // teamKey → project name
 }
 
-// GoogleConfig holds Gmail OAuth2 credentials and tokens.
+// GoogleConfig holds Gmail credentials used by Claude to log in via the browser.
 type GoogleConfig struct {
-	Email        string `json:"email"`
-	ClientID     string `json:"clientID"`
-	ClientSecret string `json:"clientSecret"`
-	RefreshToken string `json:"refreshToken"`
-	AccessToken  string `json:"accessToken,omitempty"`
-	TokenExpiry  string `json:"tokenExpiry,omitempty"` // RFC3339
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 // TwilioConfig holds Twilio REST API credentials.
@@ -51,7 +47,8 @@ type TwilioConfig struct {
 
 // BrowserConfig holds browser automation settings.
 type BrowserConfig struct {
-	Headless bool `json:"headless"`
+	Headless    bool   `json:"headless"`
+	UserDataDir string `json:"userDataDir,omitempty"` // persist cookies/session across runs
 }
 
 // Data is the full contents of projects.json.

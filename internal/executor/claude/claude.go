@@ -98,6 +98,9 @@ func (c *Claude) writeMCPConfig() (path string, cleanup func(), err error) {
 		if data.Browser.Headless {
 			playwrightArgs = append(playwrightArgs, "--headless")
 		}
+		if data.Browser.UserDataDir != "" {
+			playwrightArgs = append(playwrightArgs, "--user-data-dir", data.Browser.UserDataDir)
+		}
 		servers["playwright"] = mcpServerConfig{
 			Command: "npx",
 			Args:    playwrightArgs,
