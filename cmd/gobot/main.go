@@ -48,7 +48,11 @@ func main() {
 	}
 
 	if data.Linear != nil {
-		providers = append(providers, linearProvider.New(reg))
+		pendingFile := os.Getenv("LINEAR_PENDING_FILE")
+		if pendingFile == "" {
+			pendingFile = "linear-pending.json"
+		}
+		providers = append(providers, linearProvider.New(reg, pendingFile))
 		log.Printf("Linear provider enabled")
 	}
 
