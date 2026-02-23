@@ -18,6 +18,11 @@ type Config struct {
 	ClaudeAllowedTools string
 	ClaudeMaxBudgetUSD float64
 	ExecTimeout        time.Duration
+
+	// CI watching
+	CICheckInterval time.Duration
+	CIStuckTimeout  time.Duration
+	CIMaxRetries    int
 }
 
 func Load() (*Config, error) {
@@ -32,6 +37,9 @@ func Load() (*Config, error) {
 		ClaudeAllowedTools: getEnvOrDefault("CLAUDE_ALLOWED_TOOLS", "Bash,Read,Edit,Write,Glob,Grep"),
 		ClaudeMaxBudgetUSD: 2.00,
 		ExecTimeout:        5 * time.Minute,
+		CICheckInterval:    60 * time.Second,
+		CIStuckTimeout:     30 * time.Minute,
+		CIMaxRetries:       3,
 	}
 
 	if raw := os.Getenv("CLAUDE_MAX_BUDGET_USD"); raw != "" {
@@ -48,6 +56,30 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid EXEC_TIMEOUT: %w", err)
 		}
 		cfg.ExecTimeout = d
+	}
+
+	if raw := os.Getenv("CI_CHECK_INTERVAL"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CI_CHECK_INTERVAL: %w", err)
+		}
+		cfg.CICheckInterval = d
+	}
+
+	if raw := os.Getenv("CI_STUCK_TIMEOUT"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CI_STUCK_TIMEOUT: %w", err)
+		}
+		cfg.CIStuckTimeout = d
+	}
+
+	if raw := os.Getenv("CI_MAX_RETRIES"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CI_MAX_RETRIES: %w", err)
+		}
+		cfg.CIMaxRetries = v
 	}
 
 	return cfg, nil
