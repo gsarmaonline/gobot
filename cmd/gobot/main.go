@@ -79,7 +79,7 @@ func main() {
 		opts.Broadcaster = tg.Broadcast
 	}
 
-	exec := claudeexec.New(cfg)
+	exec := claudeexec.New(cfg, reg)
 	orch := orchestrator.New(providers, exec, workDirFn, opts)
 
 	// Give the Telegram provider a reference to the orchestrator so /setproject

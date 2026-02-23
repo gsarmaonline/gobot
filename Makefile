@@ -1,10 +1,14 @@
 BINARY := gobot
 BUILD_FLAGS := -ldflags="-s -w"
+PROJECTS_FILE ?= projects.json
 
-.PHONY: build run dev smoketest test init watch deploy deploy-config
+.PHONY: build build-mcp run dev smoketest test init watch deploy deploy-config
 
 build:
 	go build $(BUILD_FLAGS) -o $(BINARY) ./cmd/gobot/
+
+build-mcp:
+	go build $(BUILD_FLAGS) -o gobot-mcp ./cmd/gobot-mcp/
 
 run:
 	go run ./cmd/gobot/

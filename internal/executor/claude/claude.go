@@ -13,16 +13,19 @@ import (
 
 	"github.com/gsarma/gobot/internal/config"
 	"github.com/gsarma/gobot/internal/executor"
+	"github.com/gsarma/gobot/internal/registry"
 )
 
 // Claude implements executor.Executor using the Claude Code CLI.
 type Claude struct {
 	cfg *config.Config
+	reg *registry.Registry
 }
 
 // New creates a new Claude executor.
-func New(cfg *config.Config) *Claude {
-	return &Claude{cfg: cfg}
+// reg may be nil; if non-nil it is used to generate MCP config for browser/identity tools.
+func New(cfg *config.Config, reg *registry.Registry) *Claude {
+	return &Claude{cfg: cfg, reg: reg}
 }
 
 // Name returns the executor name.
@@ -30,21 +33,29 @@ func (c *Claude) Name() string { return "claude" }
 
 // Stream starts a new Claude Code session for the given prompt.
 func (c *Claude) Stream(ctx context.Context, prompt, workDir string) (<-chan executor.StreamChunk, <-chan *executor.Result, error) {
-	args := c.baseArgs()
+	mcpPath, cleanup, err := c.writeMCPConfig()
+	if err != nil {
+		return nil, nil, fmt.Errorf("mcp config: %w", err)
+	}
+	args := c.baseArgs(mcpPath)
 	args = append(args, "-p", prompt)
-	return c.stream(ctx, args, workDir)
+	return c.stream(ctx, args, workDir, cleanup)
 }
 
 // Resume continues an existing Claude Code session.
 func (c *Claude) Resume(ctx context.Context, sessionID, prompt, workDir string) (<-chan executor.StreamChunk, <-chan *executor.Result, error) {
-	args := c.baseArgs()
+	mcpPath, cleanup, err := c.writeMCPConfig()
+	if err != nil {
+		return nil, nil, fmt.Errorf("mcp config: %w", err)
+	}
+	args := c.baseArgs(mcpPath)
 	args = append(args, "-p", prompt, "--resume", sessionID)
-	return c.stream(ctx, args, workDir)
+	return c.stream(ctx, args, workDir, cleanup)
 }
 
-func (c *Claude) baseArgs() []string {
+func (c *Claude) baseArgs(mcpConfigPath string) []string {
 	budgetStr := strconv.FormatFloat(c.cfg.ClaudeMaxBudgetUSD, 'f', 2, 64)
-	return []string{
+	args := []string{
 		"--output-format", "stream-json",
 		"--verbose",
 		"--model", c.cfg.ClaudeModel,
@@ -52,9 +63,89 @@ func (c *Claude) baseArgs() []string {
 		"--permission-mode", "bypassPermissions",
 		"--max-budget-usd", budgetStr,
 	}
+	if mcpConfigPath != "" {
+		args = append(args, "--mcp-config", mcpConfigPath)
+	}
+	return args
 }
 
-func (c *Claude) stream(ctx context.Context, args []string, workDir string) (<-chan executor.StreamChunk, <-chan *executor.Result, error) {
+// mcpServerConfig is the JSON structure for a single MCP server entry.
+type mcpServerConfig struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
+// mcpConfig is the top-level MCP config file structure.
+type mcpConfig struct {
+	MCPServers map[string]mcpServerConfig `json:"mcpServers"`
+}
+
+// writeMCPConfig generates a temp MCP config file based on the current registry
+// data. Returns the file path and a cleanup func. If no servers are needed,
+// returns ("", noop, nil).
+func (c *Claude) writeMCPConfig() (path string, cleanup func(), err error) {
+	noop := func() {}
+	if c.reg == nil {
+		return "", noop, nil
+	}
+
+	data := c.reg.Get()
+	servers := make(map[string]mcpServerConfig)
+
+	if data.Browser != nil {
+		playwrightArgs := []string{"@playwright/mcp@latest"}
+		if data.Browser.Headless {
+			playwrightArgs = append(playwrightArgs, "--headless")
+		}
+		if data.Browser.UserDataDir != "" {
+			playwrightArgs = append(playwrightArgs, "--user-data-dir", data.Browser.UserDataDir)
+		}
+		servers["playwright"] = mcpServerConfig{
+			Command: "npx",
+			Args:    playwrightArgs,
+		}
+	}
+
+	if data.Google != nil || data.Twilio != nil {
+		projectsFile := c.cfg.ProjectsFile
+		if projectsFile == "" {
+			projectsFile = "projects.json"
+		}
+		servers["gobot-tools"] = mcpServerConfig{
+			Command: c.cfg.GobotMCPPath,
+			Args:    []string{},
+			Env: map[string]string{
+				"PROJECTS_FILE": projectsFile,
+			},
+		}
+	}
+
+	if len(servers) == 0 {
+		return "", noop, nil
+	}
+
+	cfg := mcpConfig{MCPServers: servers}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return "", noop, fmt.Errorf("marshal mcp config: %w", err)
+	}
+
+	f, err := os.CreateTemp("", "gobot-mcp-*.json")
+	if err != nil {
+		return "", noop, fmt.Errorf("create mcp config tmp: %w", err)
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", noop, fmt.Errorf("write mcp config: %w", err)
+	}
+	f.Close()
+
+	return f.Name(), func() { os.Remove(f.Name()) }, nil
+}
+
+func (c *Claude) stream(ctx context.Context, args []string, workDir string, cleanup func()) (<-chan executor.StreamChunk, <-chan *executor.Result, error) {
 	cmd := exec.CommandContext(ctx, c.cfg.ClaudePath, args...)
 	cmd.Dir = workDir
 	cmd.Env = os.Environ() // CRITICAL: inherit ANTHROPIC_API_KEY, HOME, etc.
@@ -78,6 +169,7 @@ func (c *Claude) stream(ctx context.Context, args []string, workDir string) (<-c
 	go func() {
 		defer close(chunks)
 		defer close(result)
+		defer cleanup()
 
 		var finalResult executor.Result
 

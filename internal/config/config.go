@@ -23,6 +23,9 @@ type Config struct {
 	CICheckInterval time.Duration
 	CIStuckTimeout  time.Duration
 	CIMaxRetries    int
+
+	// MCP server binary for gobot tools (Gmail, Twilio)
+	GobotMCPPath string
 }
 
 func Load() (*Config, error) {
@@ -40,6 +43,7 @@ func Load() (*Config, error) {
 		CICheckInterval:    60 * time.Second,
 		CIStuckTimeout:     30 * time.Minute,
 		CIMaxRetries:       3,
+		GobotMCPPath:       getEnvOrDefault("GOBOT_MCP_PATH", "gobot-mcp"),
 	}
 
 	if raw := os.Getenv("CLAUDE_MAX_BUDGET_USD"); raw != "" {

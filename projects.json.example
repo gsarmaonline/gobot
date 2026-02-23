@@ -28,5 +28,18 @@
       "ENG": "backend",
       "PLAT": "frontend"
     }
+  },
+  "google": {
+    "email": "your-bot@gmail.com",
+    "password": "your_gmail_app_password"
+  },
+  "twilio": {
+    "accountSID": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "authToken": "your_twilio_auth_token",
+    "phoneNumber": "+15555550000"
+  },
+  "browser": {
+    "headless": true,
+    "userDataDir": "/var/lib/gobot/browser-profile"
   }
 }

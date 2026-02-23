@@ -32,6 +32,11 @@ projects.json
 sessions.json
 sessions.json.tmp
 
+# Playwright MCP runtime artifacts
+.playwright-mcp/
+gobot-mcp
+gobot-setup
+
 # OS
 .DS_Store
 Thumbs.db

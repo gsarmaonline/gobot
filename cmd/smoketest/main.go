@@ -41,7 +41,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.ExecTimeout)
 	defer cancel()
 
-	exec := claudeexec.New(cfg)
+	exec := claudeexec.New(cfg, nil)
 	chunks, result, err := exec.Stream(ctx, prompt, workDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "stream error: %v\n", err)
