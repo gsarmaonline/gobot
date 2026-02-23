@@ -32,12 +32,16 @@ func New(cfg *config.Config, reg *registry.Registry) *Claude {
 func (c *Claude) Name() string { return "claude" }
 
 // Stream starts a new Claude Code session for the given prompt.
-func (c *Claude) Stream(ctx context.Context, prompt, workDir string) (<-chan executor.StreamChunk, <-chan *executor.Result, error) {
+// systemPrompt is the agent's effective system prompt; pass "" to use no system prompt.
+func (c *Claude) Stream(ctx context.Context, prompt, workDir, systemPrompt string) (<-chan executor.StreamChunk, <-chan *executor.Result, error) {
 	mcpPath, cleanup, err := c.writeMCPConfig()
 	if err != nil {
 		return nil, nil, fmt.Errorf("mcp config: %w", err)
 	}
 	args := c.baseArgs(mcpPath)
+	if systemPrompt != "" {
+		args = append(args, "--system-prompt", systemPrompt)
+	}
 	args = append(args, "-p", prompt)
 	return c.stream(ctx, args, workDir, cleanup)
 }

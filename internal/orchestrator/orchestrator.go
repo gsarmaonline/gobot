@@ -44,10 +44,11 @@ type Options struct {
 
 // Orchestrator ties multiple Providers and an Executor together.
 type Orchestrator struct {
-	providers   map[string]provider.Provider
-	executor    executor.Executor
-	workDirFn   func(provider.InboundMessage) string
-	opts        Options
+	providers        map[string]provider.Provider
+	executor         executor.Executor
+	workDirFn        func(provider.InboundMessage) string
+	systemPromptFn   func(provider.InboundMessage) string
+	opts             Options
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -56,7 +57,8 @@ type Orchestrator struct {
 // New creates a new Orchestrator.
 // providers is a slice of Provider instances; each must have a unique Name().
 // workDirFn returns the working directory to use for a given inbound message.
-func New(providers []provider.Provider, e executor.Executor, workDirFn func(provider.InboundMessage) string, opts Options) *Orchestrator {
+// systemPromptFn returns the effective system prompt for a given inbound message; may return "".
+func New(providers []provider.Provider, e executor.Executor, workDirFn func(provider.InboundMessage) string, systemPromptFn func(provider.InboundMessage) string, opts Options) *Orchestrator {
 	if opts.CICheckInterval == 0 {
 		opts.CICheckInterval = 60 * time.Second
 	}
@@ -72,11 +74,12 @@ func New(providers []provider.Provider, e executor.Executor, workDirFn func(prov
 		pm[p.Name()] = p
 	}
 	o := &Orchestrator{
-		providers: pm,
-		executor:  e,
-		workDirFn: workDirFn,
-		opts:      opts,
-		sessions:  make(map[string]*session),
+		providers:      pm,
+		executor:       e,
+		workDirFn:      workDirFn,
+		systemPromptFn: systemPromptFn,
+		opts:           opts,
+		sessions:       make(map[string]*session),
 	}
 	o.loadSessions()
 	return o
@@ -182,6 +185,9 @@ func sessionKey(msg provider.InboundMessage) string {
 	if msg.ThreadID != "" {
 		key += ":" + msg.ThreadID
 	}
+	if agent := msg.Meta["agent"]; agent != "" {
+		key += ":" + agent
+	}
 	return key
 }
 
@@ -239,7 +245,8 @@ func (o *Orchestrator) handle(ctx context.Context, msg provider.InboundMessage) 
 		chunks, result, err = o.executor.Resume(ctx, s.SessionID, msg.Text, workDir)
 	} else {
 		log.Printf("[%s] starting new session", key)
-		chunks, result, err = o.executor.Stream(ctx, msg.Text, workDir)
+		systemPrompt := o.systemPromptFn(msg)
+		chunks, result, err = o.executor.Stream(ctx, msg.Text, workDir, systemPrompt)
 	}
 
 	if err != nil {
@@ -461,7 +468,7 @@ func (o *Orchestrator) startCIWatcher(ctx context.Context, key, prURL, workDir s
 			return
 		}
 		msg := fmt.Sprintf("⚠️ [%s] stuck after %d retries / %s: %s", key, o.opts.MaxCIRetries, reason, prURL)
-		log.Printf(msg)
+		log.Print(msg)
 		broadcast(msg)
 		o.mu.Lock()
 		if s2 := o.sessions[key]; s2 != nil {

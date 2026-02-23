@@ -69,6 +69,10 @@ func main() {
 		return ""
 	}
 
+	systemPromptFn := func(msg provider.InboundMessage) string {
+		return reg.EffectiveSystemPrompt(msg.Meta["agent"])
+	}
+
 	opts := orchestrator.Options{
 		SessionsFile:    cfg.SessionsFile,
 		CICheckInterval: cfg.CICheckInterval,
@@ -80,7 +84,7 @@ func main() {
 	}
 
 	exec := claudeexec.New(cfg, reg)
-	orch := orchestrator.New(providers, exec, workDirFn, opts)
+	orch := orchestrator.New(providers, exec, workDirFn, systemPromptFn, opts)
 
 	// Give the Telegram provider a reference to the orchestrator so /setproject
 	// can clear stale sessions when the project binding changes.

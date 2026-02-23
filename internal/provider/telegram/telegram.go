@@ -132,13 +132,18 @@ func (t *Telegram) handleUpdate(ctx context.Context, update tgbotapi.Update, out
 		}
 	}
 
+	agent := t.reg.AgentForChat(chatIDStr, project)
+	meta := map[string]string{"project": project}
+	if agent != "" {
+		meta["agent"] = agent
+	}
 	msg := provider.InboundMessage{
 		ID:         strconv.Itoa(m.MessageID),
 		ChatID:     chatIDStr,
 		SenderName: senderName,
 		Text:       text,
 		Timestamp:  int64(m.Date),
-		Meta:       map[string]string{"project": project},
+		Meta:       meta,
 	}
 
 	select {
@@ -198,6 +203,30 @@ func (t *Telegram) handleCommand(chatID int64, chatIDStr, text string) {
 		}
 		t.sendText(chatID, fmt.Sprintf("Chat bound to project %q. Starting fresh session.", name))
 
+	case "/useagent":
+		if len(parts) < 2 {
+			t.sendText(chatID, "Usage: /useagent <name> — set agent for this chat\n"+
+				"       /useagent clear — revert to project/global default")
+			return
+		}
+		agentName := parts[1]
+		if agentName == "clear" {
+			agentName = ""
+		}
+		if err := t.reg.SetChatAgent(chatIDStr, agentName); err != nil {
+			t.sendText(chatID, fmt.Sprintf("Error saving agent binding: %v", err))
+			return
+		}
+		// Clear session so the next message starts fresh with the new agent.
+		if t.sessions != nil {
+			t.sessions.ClearSession("telegram:" + chatIDStr)
+		}
+		if agentName == "" {
+			t.sendText(chatID, "Agent cleared. Reverted to project/global default.")
+		} else {
+			t.sendText(chatID, fmt.Sprintf("Agent set to %q for this chat. Starting fresh session.", agentName))
+		}
+
 	case "/addlinear":
 		if len(parts) < 3 {
 			t.sendText(chatID, "Usage: /addlinear <teamKey> <project>")
@@ -225,12 +254,33 @@ func (t *Telegram) handleCommand(chatID int64, chatIDStr, text string) {
 		var sb strings.Builder
 		sb.WriteString("*Projects:*\n")
 		for name, p := range data.Projects {
-			sb.WriteString(fmt.Sprintf("  • %s → %s\n", name, p.WorkDir))
+			line := fmt.Sprintf("  • %s → %s", name, p.WorkDir)
+			if p.DefaultAgent != "" {
+				line += fmt.Sprintf(" (default agent: %s)", p.DefaultAgent)
+			}
+			sb.WriteString(line + "\n")
+		}
+		if len(data.Agents) > 0 {
+			sb.WriteString("\n*Agents:*\n")
+			defaultAgent := data.DefaultAgent
+			for name := range data.Agents {
+				line := fmt.Sprintf("  • %s", name)
+				if name == defaultAgent {
+					line += " (global default)"
+				}
+				sb.WriteString(line + "\n")
+			}
 		}
 		if data.Telegram != nil && len(data.Telegram.ChatBindings) > 0 {
 			sb.WriteString("\n*Telegram chat bindings:*\n")
 			for chat, proj := range data.Telegram.ChatBindings {
 				sb.WriteString(fmt.Sprintf("  • chat %s → %s\n", chat, proj))
+			}
+		}
+		if data.Telegram != nil && len(data.Telegram.ChatAgentBindings) > 0 {
+			sb.WriteString("\n*Telegram agent bindings:*\n")
+			for chat, agent := range data.Telegram.ChatAgentBindings {
+				sb.WriteString(fmt.Sprintf("  • chat %s → agent %s\n", chat, agent))
 			}
 		}
 		if data.Linear != nil && len(data.Linear.TeamBindings) > 0 {
@@ -243,10 +293,11 @@ func (t *Telegram) handleCommand(chatID int64, chatIDStr, text string) {
 
 	default:
 		t.sendText(chatID, "Commands:\n"+
-			"  /addproject <name> <path> — add or update a project\n"+
-			"  /setproject <name>        — bind this chat to a project\n"+
+			"  /addproject <name> <path>      — add or update a project\n"+
+			"  /setproject <name>             — bind this chat to a project\n"+
+			"  /useagent <name|clear>         — set or clear agent for this chat\n"+
 			"  /addlinear <teamKey> <project> — bind a Linear team to a project\n"+
-			"  /listprojects             — show all projects and bindings",
+			"  /listprojects                  — show all projects, agents, and bindings",
 		)
 	}
 	log.Printf("telegram: admin command %q from chat %s", cmd, chatIDStr)

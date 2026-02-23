@@ -97,8 +97,17 @@ All provider and project configuration lives here. Sections are optional — onl
 
 ```json
 {
+  "defaultAgent": "general-assistant",
+  "agents": {
+    "general-assistant": { "systemPrompt": "You are a helpful AI assistant." },
+    "backend-engineer":  { "systemPrompt": "You are a senior backend engineer. Always open a PR rather than pushing directly to main." }
+  },
   "projects": {
-    "backend": { "workDir": "/home/user/repos/backend" }
+    "backend": {
+      "workDir": "/home/user/repos/backend",
+      "agents": ["backend-engineer"],
+      "defaultAgent": "backend-engineer"
+    }
   },
   "telegram": {
     "token": "123456:ABCDEFG...",
@@ -118,7 +127,13 @@ All provider and project configuration lives here. Sections are optional — onl
 
 | Field | Description |
 |---|---|
+| `defaultAgent` | Global fallback agent name when no other binding matches |
+| `agents.<name>.systemPrompt` | Identity/role instructions injected as the system prompt for this agent |
+| `agents.<name>.allowedTools` | Override `CLAUDE_ALLOWED_TOOLS` for this agent (optional) |
+| `agents.<name>.maxBudgetUSD` | Override `CLAUDE_MAX_BUDGET_USD` for this agent (optional) |
 | `projects.<name>.workDir` | Absolute path to the git repo Claude will work in |
+| `projects.<name>.defaultAgent` | Default agent for this project (overrides global `defaultAgent`) |
+| `projects.<name>.agents` | List of agent names permitted for this project |
 | `telegram.token` | Telegram bot token from @BotFather |
 | `telegram.adminChatIDs` | Chat IDs that can issue `/commands` to manage the bot |
 | `telegram.chatBindings` | Map of Telegram chat ID → project name |
@@ -128,6 +143,17 @@ All provider and project configuration lives here. Sections are optional — onl
 | `linear.triggerState` | Issue state that triggers implementation (default: `"In Progress"`) |
 | `linear.doneState` | Issue state that triggers PR merge (default: `"Done"`) |
 | `linear.teamBindings` | Map of Linear team key → project name |
+
+#### Agent identity and memory
+
+Agents are first-class named identities defined globally in `projects.json`. Multiple projects can share the same agent. The active agent for a message is resolved in order:
+
+1. Per-chat override set via `/useagent` (`telegram.chatAgentBindings`)
+2. Project's `defaultAgent`
+3. Global `defaultAgent`
+4. No system prompt (default Claude behaviour)
+
+Each agent's system prompt is automatically extended with a memory file instruction pointing to `~/.gobot/agents/<name>.md`. Claude reads this file at the start of every task and appends new learnings after completing one — no extra infrastructure required.
 
 #### Browser automation and identity tools (optional)
 
@@ -191,7 +217,9 @@ No env vars are required. Gobot shells out to `claude`, which uses credentials f
 4. Use admin commands to set up project bindings:
    - `/addproject backend /path/to/repo` — register a project
    - `/setproject backend` — bind the current chat to that project
-   - `/listprojects` — show all projects and bindings
+   - `/useagent backend-engineer` — set the active agent for this chat
+   - `/useagent clear` — revert to the project/global default agent
+   - `/listprojects` — show all projects, agents, and bindings
    - `/addlinear ENG backend` — bind a Linear team to a project
 5. Send a message to your bot — gobot streams Claude's response back in real time
 6. Follow-up messages automatically resume the Claude session

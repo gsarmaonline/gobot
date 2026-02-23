@@ -42,7 +42,7 @@ func main() {
 	defer cancel()
 
 	exec := claudeexec.New(cfg, nil)
-	chunks, result, err := exec.Stream(ctx, prompt, workDir)
+	chunks, result, err := exec.Stream(ctx, prompt, workDir, "")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "stream error: %v\n", err)
 		os.Exit(1)
