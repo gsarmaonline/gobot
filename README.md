@@ -49,6 +49,21 @@ Linear "Done" webhook → emit "merge" action
   → unblock any pending issues that were waiting on this one
 
 Pending queue → 60s ticker re-fetches blocker states (catches moves to Done while gobot was down)
+  → resolve project via teamBindings → Orchestrator
+  → Claude: branch, implement, commit, push, gh pr create
+  → extract PR URL → start CI watcher goroutine
+
+CI watcher (autonomous):
+  wait CI_CHECK_INTERVAL → poll gh pr checks
+  "pending" → wait → poll again
+  "failing"  → resume Claude with failing check names → wait 2×interval → poll
+             → if retries > CI_MAX_RETRIES → broadcast ⚠️ stuck via Telegram
+  "passing"  → gh pr merge --squash → broadcast ✅ via Telegram
+  CI_STUCK_TIMEOUT exceeded → broadcast ⚠️ stuck via Telegram
+
+Linear "Done" webhook → manual override / fallback merge
+  → if CI is still failing: warn instead of merging
+  → otherwise: gh pr merge --squash
 ```
 
 ## Setup
@@ -131,6 +146,9 @@ No env vars are required. Gobot shells out to `claude`, which uses credentials f
 | `CLAUDE_ALLOWED_TOOLS` | `Bash,Read,Edit,Write,Glob,Grep` | Tools Claude may use |
 | `CLAUDE_MAX_BUDGET_USD` | `2.00` | Per-request budget cap |
 | `EXEC_TIMEOUT` | `5m` | Timeout per request |
+| `CI_CHECK_INTERVAL` | `60s` | How often to poll `gh pr checks` |
+| `CI_STUCK_TIMEOUT` | `30m` | Give up watching CI after this duration |
+| `CI_MAX_RETRIES` | `3` | Max times Claude is resumed to fix CI failures |
 
 ## Usage
 
@@ -154,8 +172,10 @@ No env vars are required. Gobot shells out to `claude`, which uses credentials f
 3. Start gobot: `go run ./cmd/gobot/`
 4. Expose the webhook port: `ngrok http 8080`
 5. Set the webhook URL in Linear → Team Settings → API → Webhooks (subscribe to Issue events)
-6. Move an issue to **In Progress** → Claude branches, implements, creates a PR, posts the PR URL as a comment
-7. Move the issue to **Done** → gobot squash-merges the PR and posts confirmation
+6. Move an issue to **In Progress** → Claude branches, implements, creates a PR; CI watcher starts automatically
+7. CI passes → gobot squash-merges the PR and broadcasts success via Telegram (no manual action needed)
+8. CI fails → Claude is resumed automatically to fix the failures (up to `CI_MAX_RETRIES` times)
+9. Move the issue to **Done** → manual override: merges immediately if CI is passing, warns if CI is still failing
 
 ## Deployment (Ubuntu)
 

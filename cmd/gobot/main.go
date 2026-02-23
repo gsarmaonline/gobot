@@ -35,9 +35,11 @@ func main() {
 	// Build providers from registry data.
 	data := reg.Get()
 	var providers []provider.Provider
+	var tg *telegramProvider.Telegram
 
 	if data.Telegram != nil {
-		tg, err := telegramProvider.New(data.Telegram.Token, reg)
+		var err error
+		tg, err = telegramProvider.New(data.Telegram.Token, reg)
 		if err != nil {
 			log.Fatalf("telegram: %v", err)
 		}
@@ -67,12 +69,28 @@ func main() {
 		return ""
 	}
 
+	opts := orchestrator.Options{
+		SessionsFile:    cfg.SessionsFile,
+		CICheckInterval: cfg.CICheckInterval,
+		CIStuckTimeout:  cfg.CIStuckTimeout,
+		MaxCIRetries:    cfg.CIMaxRetries,
+	}
+	if tg != nil {
+		opts.Broadcaster = tg.Broadcast
+	}
+
 	exec := claudeexec.New(cfg)
-	orch := orchestrator.New(providers, exec, workDirFn, cfg.SessionsFile)
+	orch := orchestrator.New(providers, exec, workDirFn, opts)
 
 	log.Printf("gobot starting...")
+	if tg != nil {
+		tg.Broadcast("gobot started")
+	}
 	if err := orch.Run(ctx); err != nil && err != context.Canceled {
 		log.Fatalf("orchestrator: %v", err)
+	}
+	if tg != nil {
+		tg.Broadcast("gobot stopping")
 	}
 	log.Println("gobot stopped")
 }
