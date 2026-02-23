@@ -28,5 +28,21 @@
       "ENG": "backend",
       "PLAT": "frontend"
     }
+  },
+  "google": {
+    "email": "your-bot@gmail.com",
+    "clientID": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "clientSecret": "YOUR_GOOGLE_CLIENT_SECRET",
+    "refreshToken": "",
+    "accessToken": "",
+    "tokenExpiry": ""
+  },
+  "twilio": {
+    "accountSID": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "authToken": "your_twilio_auth_token",
+    "phoneNumber": "+15555550000"
+  },
+  "browser": {
+    "headless": true
   }
 }

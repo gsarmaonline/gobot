@@ -32,12 +32,37 @@ type LinearConfig struct {
 	TeamBindings  map[string]string `json:"teamBindings"` // teamKey → project name
 }
 
+// GoogleConfig holds Gmail OAuth2 credentials and tokens.
+type GoogleConfig struct {
+	Email        string `json:"email"`
+	ClientID     string `json:"clientID"`
+	ClientSecret string `json:"clientSecret"`
+	RefreshToken string `json:"refreshToken"`
+	AccessToken  string `json:"accessToken,omitempty"`
+	TokenExpiry  string `json:"tokenExpiry,omitempty"` // RFC3339
+}
+
+// TwilioConfig holds Twilio REST API credentials.
+type TwilioConfig struct {
+	AccountSID  string `json:"accountSID"`
+	AuthToken   string `json:"authToken"`
+	PhoneNumber string `json:"phoneNumber"`
+}
+
+// BrowserConfig holds browser automation settings.
+type BrowserConfig struct {
+	Headless bool `json:"headless"`
+}
+
 // Data is the full contents of projects.json.
 type Data struct {
 	Projects       map[string]Project `json:"projects"`
 	DefaultProject string             `json:"defaultProject,omitempty"`
 	Telegram       *TelegramConfig    `json:"telegram,omitempty"`
 	Linear         *LinearConfig      `json:"linear,omitempty"`
+	Google         *GoogleConfig      `json:"google,omitempty"`
+	Twilio         *TwilioConfig      `json:"twilio,omitempty"`
+	Browser        *BrowserConfig     `json:"browser,omitempty"`
 }
 
 // Registry holds the parsed projects.json and supports hot-reload.

@@ -129,6 +129,35 @@ All provider and project configuration lives here. Sections are optional — onl
 | `linear.doneState` | Issue state that triggers PR merge (default: `"Done"`) |
 | `linear.teamBindings` | Map of Linear team key → project name |
 
+#### Browser automation and identity tools (optional)
+
+Add these sections to enable Claude to use browser automation, read email, and send/receive SMS during task execution. Presence of a section activates the feature; absence skips it.
+
+```json
+{
+  "google": {
+    "email": "your-bot@gmail.com",
+    "clientID": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "clientSecret": "YOUR_GOOGLE_CLIENT_SECRET",
+    "refreshToken": ""
+  },
+  "twilio": {
+    "accountSID": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "authToken": "your_twilio_auth_token",
+    "phoneNumber": "+15555550000"
+  },
+  "browser": {
+    "headless": true
+  }
+}
+```
+
+- **`google`** — Gmail credentials. Run `make setup-google` once to complete the OAuth2 device flow and store tokens automatically.
+- **`twilio`** — Twilio REST API credentials. No additional setup needed.
+- **`browser`** — enables Playwright browser automation (requires `npx` / Node.js). Set `headless: false` for headed mode.
+
+When any of these sections are present, gobot generates a temporary MCP config and passes `--mcp-config` to Claude, making the tools available without any changes to `CLAUDE_ALLOWED_TOOLS`.
+
 ### Environment variables
 
 Only Claude executor settings are configured via env:
@@ -149,6 +178,7 @@ No env vars are required. Gobot shells out to `claude`, which uses credentials f
 | `CI_CHECK_INTERVAL` | `60s` | How often to poll `gh pr checks` |
 | `CI_STUCK_TIMEOUT` | `30m` | Give up watching CI after this duration |
 | `CI_MAX_RETRIES` | `3` | Max times Claude is resumed to fix CI failures |
+| `GOBOT_MCP_PATH` | `gobot-mcp` | Path to the `gobot-mcp` binary (Gmail/Twilio MCP server) |
 
 ## Usage
 
@@ -220,11 +250,16 @@ go run ./cmd/smoketest/ "list files in /tmp and summarise"
 
 ```
 cmd/gobot/main.go                      # entry point — loads registry, starts all providers
+cmd/gobot-mcp/main.go                  # MCP stdio server: Gmail + Twilio tools for Claude
+cmd/gobot-setup/main.go                # one-time Gmail OAuth2 device-flow setup
 cmd/smoketest/main.go                  # CLI smoke test for the Claude executor
 projects.json.example                  # annotated example projects.json
 internal/
   config/config.go                     # Claude executor env-var config only
   registry/registry.go                 # projects.json loader, watcher, atomic Save
+  identity/
+    gmail/gmail.go                     # Gmail v1 API client (list, get, send, FindOTP)
+    twilio/twilio.go                   # Twilio REST client (list SMS, send SMS)
   provider/
     provider.go                        # Provider interface + message types
     telegram/telegram.go               # Telegram long-poll + admin commands
@@ -233,6 +268,6 @@ internal/
       linear.go                        # Linear webhook HTTP server
   executor/
     executor.go                        # Executor interface
-    claude/claude.go                   # Claude Code CLI implementation
+    claude/claude.go                   # Claude Code CLI implementation + MCP config writer
   orchestrator/orchestrator.go         # multi-provider fan-in; streaming vs batch; merge
 ```
