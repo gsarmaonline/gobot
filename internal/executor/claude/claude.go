@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/gsarma/gobot/internal/config"
 	"github.com/gsarma/gobot/internal/executor"
@@ -80,8 +81,12 @@ func (c *Claude) stream(ctx context.Context, args []string, workDir string) (<-c
 
 		var finalResult executor.Result
 
-		// Drain stderr in background so it doesn't block.
-		go io.Copy(io.Discard, stderr)
+		// Capture stderr so we can include it in error messages.
+		stderrDone := make(chan []byte, 1)
+		go func() {
+			b, _ := io.ReadAll(stderr)
+			stderrDone <- b
+		}()
 
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1 MB line buffer
@@ -94,9 +99,22 @@ func (c *Claude) stream(ctx context.Context, args []string, workDir string) (<-c
 			parseStreamLine(line, chunks, &finalResult)
 		}
 
+		stderrBytes := <-stderrDone
+
 		if err := cmd.Wait(); err != nil {
 			if finalResult.Err == nil {
-				finalResult.Err = err
+				if len(stderrBytes) > 0 {
+					finalResult.Err = fmt.Errorf("%w\nstderr: %s", err, strings.TrimSpace(string(stderrBytes)))
+				} else {
+					finalResult.Err = err
+				}
+			}
+		}
+
+		// If claude reported an error with empty result, include stderr for context.
+		if finalResult.Err != nil && len(stderrBytes) > 0 {
+			if finalResult.Err.Error() == "claude error: " {
+				finalResult.Err = fmt.Errorf("claude error: %s", strings.TrimSpace(string(stderrBytes)))
 			}
 		}
 

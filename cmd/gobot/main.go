@@ -82,6 +82,16 @@ func main() {
 	exec := claudeexec.New(cfg)
 	orch := orchestrator.New(providers, exec, workDirFn, opts)
 
+	// Give the Telegram provider a reference to the orchestrator so /setproject
+	// can clear stale sessions when the project binding changes.
+	for _, p := range providers {
+		if tg, ok := p.(interface {
+			SetSessionClearer(telegramProvider.SessionClearer)
+		}); ok {
+			tg.SetSessionClearer(orch)
+		}
+	}
+
 	log.Printf("gobot starting...")
 	if tg != nil {
 		tg.Broadcast("gobot started")

@@ -12,10 +12,16 @@ import (
 	"github.com/gsarma/gobot/internal/registry"
 )
 
+// SessionClearer can remove a stored session by key (implemented by Orchestrator).
+type SessionClearer interface {
+	ClearSession(key string)
+}
+
 // Telegram implements provider.Provider using the Telegram Bot API.
 type Telegram struct {
-	bot *tgbotapi.BotAPI
-	reg *registry.Registry
+	bot      *tgbotapi.BotAPI
+	reg      *registry.Registry
+	sessions SessionClearer // optional; set after orchestrator is created
 }
 
 // New creates a new Telegram provider.
@@ -26,6 +32,11 @@ func New(token string, reg *registry.Registry) (*Telegram, error) {
 	}
 	log.Printf("Telegram bot authorized as @%s", bot.Self.UserName)
 	return &Telegram{bot: bot, reg: reg}, nil
+}
+
+// SetSessionClearer wires in the orchestrator so /setproject can clear stale sessions.
+func (t *Telegram) SetSessionClearer(sc SessionClearer) {
+	t.sessions = sc
 }
 
 // Name returns the provider name.
@@ -181,7 +192,11 @@ func (t *Telegram) handleCommand(chatID int64, chatIDStr, text string) {
 			t.sendText(chatID, fmt.Sprintf("Error saving binding: %v", err))
 			return
 		}
-		t.sendText(chatID, fmt.Sprintf("Chat bound to project %q.", name))
+		// Clear any existing session so the next message starts fresh in the new workDir.
+		if t.sessions != nil {
+			t.sessions.ClearSession("telegram:" + chatIDStr)
+		}
+		t.sendText(chatID, fmt.Sprintf("Chat bound to project %q. Starting fresh session.", name))
 
 	case "/addlinear":
 		if len(parts) < 3 {

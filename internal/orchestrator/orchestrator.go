@@ -197,6 +197,15 @@ func (o *Orchestrator) setSession(key string, s *session) {
 	o.sessions[key] = s
 }
 
+// ClearSession removes any stored session for the given key, forcing a fresh
+// Claude session on the next message. Key format: "providerName:chatID".
+func (o *Orchestrator) ClearSession(key string) {
+	o.mu.Lock()
+	delete(o.sessions, key)
+	o.mu.Unlock()
+	o.saveSessions()
+}
+
 func (o *Orchestrator) handle(ctx context.Context, msg provider.InboundMessage) {
 	key := sessionKey(msg)
 
