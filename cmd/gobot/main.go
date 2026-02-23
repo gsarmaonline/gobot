@@ -65,8 +65,18 @@ func main() {
 		return ""
 	}
 
+	opts := orchestrator.Options{
+		SessionsFile:    cfg.SessionsFile,
+		CICheckInterval: cfg.CICheckInterval,
+		CIStuckTimeout:  cfg.CIStuckTimeout,
+		MaxCIRetries:    cfg.CIMaxRetries,
+	}
+	if tg != nil {
+		opts.Broadcaster = tg.Broadcast
+	}
+
 	exec := claudeexec.New(cfg)
-	orch := orchestrator.New(providers, exec, workDirFn, cfg.SessionsFile)
+	orch := orchestrator.New(providers, exec, workDirFn, opts)
 
 	log.Printf("gobot starting...")
 	if tg != nil {
