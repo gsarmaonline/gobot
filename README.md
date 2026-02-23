@@ -37,12 +37,18 @@ Telegram msg → project lookup (chatBindings) → Orchestrator
 
 ```
 Linear "In Progress" webhook → verify HMAC-SHA256 → fetch issue
-  → resolve project via teamBindings → Orchestrator
-  → Claude: branch, implement, commit, push, gh pr create
-  → extract PR URL → post as comment on Linear issue
+  → resolve project via teamBindings
+  → check blocking relations: if blockers not Done → queue in linear-pending.json
+      → post comment "Waiting on: ENG-1, ENG-5 before starting"
+  → if no active blockers → Orchestrator
+      → Claude: branch, implement, commit, push, gh pr create
+      → extract PR URL → post as comment on Linear issue
 
 Linear "Done" webhook → emit "merge" action
   → look up stored PR URL → gh pr merge --squash → post confirmation
+  → unblock any pending issues that were waiting on this one
+
+Pending queue → 60s ticker re-fetches blocker states (catches moves to Done while gobot was down)
 ```
 
 ## Setup
@@ -118,6 +124,7 @@ No env vars are required. Gobot shells out to `claude`, which uses credentials f
 |---|---|---|
 | `PROJECTS_FILE` | `projects.json` | Path to projects.json |
 | `SESSIONS_FILE` | `sessions.json` | Path to persist Claude session IDs across restarts |
+| `LINEAR_PENDING_FILE` | `linear-pending.json` | Path to persist deferred (blocked) Linear issues across restarts |
 | `GOBOT_REPO_DIR` | `/var/lib/gobot/src` | Source repo path used by auto-update timer |
 | `CLAUDE_PATH` | `claude` | Path to the `claude` binary |
 | `CLAUDE_MODEL` | `claude-opus-4-6` | Model to use |

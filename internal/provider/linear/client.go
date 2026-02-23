@@ -10,6 +10,13 @@ import (
 
 const graphqlEndpoint = "https://api.linear.app/graphql"
 
+// BlockingIssue represents an issue that blocks another issue.
+type BlockingIssue struct {
+	ID         string
+	Identifier string // e.g. "ENG-5"
+	StateName  string // e.g. "In Progress"
+}
+
 // Issue holds the fields we care about from a Linear issue.
 type Issue struct {
 	ID          string
@@ -17,7 +24,9 @@ type Issue struct {
 	Description string
 	Identifier  string // e.g. "ENG-123"
 	URL         string
-	TeamKey     string // e.g. "ENG"
+	TeamKey     string           // e.g. "ENG"
+	StateName   string           // e.g. "Done"
+	BlockedBy   []BlockingIssue // issues that block this one
 }
 
 // Client is a minimal Linear GraphQL API client.
@@ -94,8 +103,19 @@ func (c *Client) FetchIssue(id string) (*Issue, error) {
 			description
 			identifier
 			url
+			state { name }
 			team {
 				key
+			}
+			relations {
+				nodes {
+					type
+					relatedIssue {
+						id
+						identifier
+						state { name }
+					}
+				}
 			}
 		}
 	}`
@@ -115,9 +135,24 @@ func (c *Client) FetchIssue(id string) (*Issue, error) {
 			Description string `json:"description"`
 			Identifier  string `json:"identifier"`
 			URL         string `json:"url"`
-			Team        struct {
+			State       struct {
+				Name string `json:"name"`
+			} `json:"state"`
+			Team struct {
 				Key string `json:"key"`
 			} `json:"team"`
+			Relations struct {
+				Nodes []struct {
+					Type         string `json:"type"`
+					RelatedIssue struct {
+						ID         string `json:"id"`
+						Identifier string `json:"identifier"`
+						State      struct {
+							Name string `json:"name"`
+						} `json:"state"`
+					} `json:"relatedIssue"`
+				} `json:"nodes"`
+			} `json:"relations"`
 		} `json:"issue"`
 	}
 
@@ -125,14 +160,27 @@ func (c *Client) FetchIssue(id string) (*Issue, error) {
 		return nil, fmt.Errorf("unmarshal issue: %w", err)
 	}
 
-	return &Issue{
+	issue := &Issue{
 		ID:          result.Issue.ID,
 		Title:       result.Issue.Title,
 		Description: result.Issue.Description,
 		Identifier:  result.Issue.Identifier,
 		URL:         result.Issue.URL,
 		TeamKey:     result.Issue.Team.Key,
-	}, nil
+		StateName:   result.Issue.State.Name,
+	}
+
+	for _, node := range result.Issue.Relations.Nodes {
+		if node.Type == "blocked_by" {
+			issue.BlockedBy = append(issue.BlockedBy, BlockingIssue{
+				ID:         node.RelatedIssue.ID,
+				Identifier: node.RelatedIssue.Identifier,
+				StateName:  node.RelatedIssue.State.Name,
+			})
+		}
+	}
+
+	return issue, nil
 }
 
 // PostComment adds a comment to a Linear issue.
