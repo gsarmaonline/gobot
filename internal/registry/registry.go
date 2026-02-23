@@ -6,20 +6,31 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
 
+// AgentData holds configuration for a named agent identity.
+type AgentData struct {
+	SystemPrompt string  `json:"systemPrompt"`
+	AllowedTools string  `json:"allowedTools,omitempty"`
+	MaxBudgetUSD float64 `json:"maxBudgetUSD,omitempty"`
+}
+
 // Project holds configuration for a single project.
 type Project struct {
-	WorkDir string `json:"workDir"`
+	WorkDir      string   `json:"workDir"`
+	Agents       []string `json:"agents,omitempty"`
+	DefaultAgent string   `json:"defaultAgent,omitempty"`
 }
 
 // TelegramConfig holds Telegram-specific configuration.
 type TelegramConfig struct {
-	Token        string            `json:"token"`
-	AdminChatIDs []int64           `json:"adminChatIDs"`
-	ChatBindings map[string]string `json:"chatBindings"` // chatID → project name
+	Token             string            `json:"token"`
+	AdminChatIDs      []int64           `json:"adminChatIDs"`
+	ChatBindings      map[string]string `json:"chatBindings"`           // chatID → project name
+	ChatAgentBindings map[string]string `json:"chatAgentBindings,omitempty"` // chatID → agent name
 }
 
 // LinearConfig holds Linear-specific configuration.
@@ -53,13 +64,15 @@ type BrowserConfig struct {
 
 // Data is the full contents of projects.json.
 type Data struct {
-	Projects       map[string]Project `json:"projects"`
-	DefaultProject string             `json:"defaultProject,omitempty"`
-	Telegram       *TelegramConfig    `json:"telegram,omitempty"`
-	Linear         *LinearConfig      `json:"linear,omitempty"`
-	Google         *GoogleConfig      `json:"google,omitempty"`
-	Twilio         *TwilioConfig      `json:"twilio,omitempty"`
-	Browser        *BrowserConfig     `json:"browser,omitempty"`
+	Projects       map[string]Project   `json:"projects"`
+	DefaultProject string               `json:"defaultProject,omitempty"`
+	Agents         map[string]AgentData `json:"agents,omitempty"`
+	DefaultAgent   string               `json:"defaultAgent,omitempty"`
+	Telegram       *TelegramConfig      `json:"telegram,omitempty"`
+	Linear         *LinearConfig        `json:"linear,omitempty"`
+	Google         *GoogleConfig        `json:"google,omitempty"`
+	Twilio         *TwilioConfig        `json:"twilio,omitempty"`
+	Browser        *BrowserConfig       `json:"browser,omitempty"`
 }
 
 // Registry holds the parsed projects.json and supports hot-reload.
@@ -202,6 +215,69 @@ func (r *Registry) IsAdminChat(chatID int64) bool {
 		}
 	}
 	return false
+}
+
+// AgentForChat resolves the active agent name for a chat+project using the precedence:
+// chatAgentBindings[chatID] → project.defaultAgent → data.defaultAgent → "".
+func (r *Registry) AgentForChat(chatID, project string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.data.Telegram != nil && r.data.Telegram.ChatAgentBindings != nil {
+		if agent, ok := r.data.Telegram.ChatAgentBindings[chatID]; ok {
+			return agent
+		}
+	}
+	if p, ok := r.data.Projects[project]; ok && p.DefaultAgent != "" {
+		return p.DefaultAgent
+	}
+	return r.data.DefaultAgent
+}
+
+// EffectiveSystemPrompt builds the full system prompt for an agent, appending
+// the memory file instruction. Returns "" if agentName is unknown or empty.
+func (r *Registry) EffectiveSystemPrompt(agentName string) string {
+	if agentName == "" {
+		return ""
+	}
+	r.mu.RLock()
+	agent, ok := r.data.Agents[agentName]
+	r.mu.RUnlock()
+	if !ok {
+		return ""
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "~"
+	}
+	memoryPath := filepath.Join(homeDir, ".gobot", "agents", agentName+".md")
+	prompt := agent.SystemPrompt
+	if prompt != "" {
+		prompt += "\n\n"
+	}
+	prompt += fmt.Sprintf(
+		"Your memory file is at %s.\n"+
+			"Read it at the start of every task to recall past context.\n"+
+			"After completing a task, append any new decisions, patterns, or gotchas you learned.",
+		memoryPath,
+	)
+	return prompt
+}
+
+// SetChatAgent saves (or clears, if agentName=="") a chat → agent binding.
+func (r *Registry) SetChatAgent(chatID, agentName string) error {
+	return r.Save(func(d *Data) {
+		if d.Telegram == nil {
+			d.Telegram = &TelegramConfig{}
+		}
+		if d.Telegram.ChatAgentBindings == nil {
+			d.Telegram.ChatAgentBindings = make(map[string]string)
+		}
+		if agentName == "" {
+			delete(d.Telegram.ChatAgentBindings, chatID)
+		} else {
+			d.Telegram.ChatAgentBindings[chatID] = agentName
+		}
+	})
 }
 
 // Save applies mutate to the current data and writes it atomically to disk.
