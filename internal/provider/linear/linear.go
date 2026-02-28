@@ -79,7 +79,7 @@ func (l *Linear) Messages(ctx context.Context) (<-chan provider.InboundMessage, 
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/webhook", l.handleWebhook)
+	mux.HandleFunc("/callback/gobot", l.handleWebhook)
 
 	addr := fmt.Sprintf(":%d", port)
 	l.server = &http.Server{Addr: addr, Handler: mux}
